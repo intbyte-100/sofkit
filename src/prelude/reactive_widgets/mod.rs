@@ -1,0 +1,340 @@
+use std::{cell::RefCell, fmt::Display, rc::Rc};
+
+use gtk::glib::WeakRef;
+use gtk::prelude::*;
+use gtk::{
+    CheckButton, Entry, Label,
+    builders::{CheckButtonBuilder, EntryBuilder, LabelBuilder},
+};
+
+use crate::state::{State, StateHandle};
+
+pub struct ReactiveLabelBuilder {
+    subscribes: Vec<Box<dyn Fn(WeakRef<Label>)>>,
+    builder: LabelBuilder,
+}
+
+impl ReactiveLabelBuilder {
+    pub fn new() -> Self {
+        Self {
+            subscribes: Vec::new(),
+            builder: Label::builder(),
+        }
+    }
+
+    pub fn with_raw<T>(mut self, editor: T) -> Self
+    where
+        T: Fn(LabelBuilder) -> LabelBuilder,
+    {
+        self.builder = editor(self.builder);
+        self
+    }
+
+    pub fn text_state<T: Display + 'static, D: State<T> + 'static>(self, state: &D) -> Self {
+        self.bind_state(state, |label, it| label.set_label(it.to_string().as_str()))
+    }
+
+    pub fn bind_state<T: 'static, S: Fn(Label, &T) + 'static + Clone, D: State<T> + 'static>(
+        mut self,
+        state: &D,
+        callback: S,
+    ) -> Self {
+        let state = state.clone();
+        self.subscribes.push(Box::new(move |lbl_weak| {
+            let callback = callback.clone();
+            state.subscribe(move |it| {
+                if let Some(label) = lbl_weak.upgrade() {
+                    callback(label, it);
+                }
+            });
+        }));
+        self
+    }
+
+    pub fn build(self) -> Label {
+        let label = self.builder.build();
+        let weak = label.downgrade();
+        for subscribe in self.subscribes {
+            subscribe(weak.clone());
+        }
+        label
+    }
+}
+
+pub struct ReactiveEntryBuilder {
+    subscribes: Vec<Box<dyn Fn(WeakRef<Entry>)>>,
+    builder: EntryBuilder,
+    on_change_callbacks: Vec<Box<dyn Fn(String)>>,
+    two_way_state: Option<StateHandle<String>>,
+}
+
+impl ReactiveEntryBuilder {
+    pub fn new() -> Self {
+        Self {
+            subscribes: Vec::new(),
+            builder: Entry::builder(),
+            on_change_callbacks: Vec::new(),
+            two_way_state: None,
+        }
+    }
+
+    pub fn with_raw<T>(mut self, editor: T) -> Self
+    where
+        T: Fn(EntryBuilder) -> EntryBuilder,
+    {
+        self.builder = editor(self.builder);
+        self
+    }
+
+    pub fn text_state<T: State<String> + 'static>(mut self, state: &T) -> Self {
+        self.bind_state(state, |entry, it| entry.set_text(it.as_str()))
+    }
+
+    pub fn bind_state<T: 'static, S: Fn(Entry, &T) + 'static + Clone, D: State<T> + 'static>(
+        mut self,
+        state: &D,
+        callback: S,
+    ) -> Self {
+        let state = state.clone();
+        self.subscribes.push(Box::new(move |entry_weak| {
+            let callback = callback.clone();
+            state.subscribe(move |it| {
+                if let Some(entry) = entry_weak.upgrade() {
+                    callback(entry, it);
+                }
+            });
+        }));
+        self
+    }
+
+    pub fn bind_state_two_way(mut self, state: StateHandle<String>) -> Self {
+        let state_for_sub = state.clone();
+        self.subscribes.push(Box::new(move |entry_weak| {
+            let state_for_sub = state_for_sub.clone();
+            state_for_sub.subscribe(move |it| {
+                if let Some(entry) = entry_weak.upgrade() {
+                    entry.set_text(it.as_str());
+                }
+            });
+        }));
+
+        self.two_way_state = Some(state);
+        self
+    }
+
+    pub fn on_changed<T: Fn(String) + 'static>(mut self, cb: T) -> Self {
+        self.on_change_callbacks.push(Box::new(cb));
+        self
+    }
+
+    pub fn on_changed_state(mut self, state: StateHandle<String>) -> Self {
+        
+        let state_for_sub = state.clone();
+        self.subscribes.push(Box::new(move |entry_weak| {
+            let state_for_sub = state_for_sub.clone();
+            state_for_sub.subscribe(move |it| {
+                if let Some(entry) = entry_weak.upgrade() {
+                    entry.set_text(it.as_str());
+                }
+            });
+        }));
+
+        
+        self.on_change_callbacks.push(Box::new(move |text: String| {
+            state.edit(move |it| *it = text.clone());
+        }));
+
+        self
+    }
+
+    pub fn build(mut self) -> Entry {
+        let entry = self.builder.build();
+
+        let callbacks = std::mem::take(&mut self.on_change_callbacks);
+
+        if let Some(state) = self.two_way_state.take() {
+            
+            entry.connect_changed(move |e| {
+                let text = e.text().to_string();
+                
+                
+                state.set(text.clone());
+                for cb in &callbacks {
+                    cb(text.clone());
+                }
+            });
+        } else if !callbacks.is_empty() {
+            entry.connect_changed(move |e| {
+                let text = e.text().to_string();
+                for cb in &callbacks {
+                    cb(text.clone());
+                }
+            });
+        }
+
+        let weak = entry.downgrade();
+        for subscribe in self.subscribes {
+            subscribe(weak.clone());
+        }
+
+        entry
+    }
+}
+
+pub struct ReactiveCheckButtonBuilder {
+    subscribes: Vec<Box<dyn Fn(WeakRef<CheckButton>)>>,
+    builder: CheckButtonBuilder,
+    on_toggled_callbacks: Vec<Box<dyn Fn(bool)>>,
+    two_way_state: Option<StateHandle<bool>>,
+}
+
+impl ReactiveCheckButtonBuilder {
+    pub fn new() -> Self {
+        Self {
+            subscribes: Vec::new(),
+            builder: CheckButton::builder(),
+            on_toggled_callbacks: Vec::new(),
+            two_way_state: None,
+        }
+    }
+
+    pub fn with_raw<T>(mut self, editor: T) -> Self
+    where
+        T: Fn(CheckButtonBuilder) -> CheckButtonBuilder,
+    {
+        self.builder = editor(self.builder);
+        self
+    }
+
+    pub fn active_state<T: State<bool> + 'static>(mut self, state: &T) -> Self {
+        self.bind_state(state, |cb, it| cb.set_active(*it))
+    }
+
+    pub fn bind_state<
+        T: 'static,
+        S: Fn(CheckButton, &T) + 'static + Clone,
+        D: State<T> + 'static,
+    >(
+        mut self,
+        state: &D,
+        callback: S,
+    ) -> Self {
+        let state = state.clone();
+        self.subscribes.push(Box::new(move |cb_weak| {
+            let callback = callback.clone();
+            state.subscribe(move |it| {
+                if let Some(cb) = cb_weak.upgrade() {
+                    callback(cb, it);
+                }
+            });
+        }));
+        self
+    }
+
+    pub fn on_toggled_state(mut self, state: StateHandle<bool>) -> Self {
+        
+        let state_for_sub = state.clone();
+        self.subscribes.push(Box::new(move |cb_weak| {
+            let state_for_sub = state_for_sub.clone();
+            state_for_sub.subscribe(move |it| {
+                if let Some(cb) = cb_weak.upgrade() {
+                    cb.set_active(*it);
+                }
+            });
+        }));
+
+        
+        self.two_way_state = Some(state);
+        self
+    }
+
+    pub fn on_toggled<T: Fn(bool) + 'static>(mut self, cb: T) -> Self {
+        self.on_toggled_callbacks.push(Box::new(cb));
+        self
+    }
+
+    pub fn build(mut self) -> CheckButton {
+        let check = self.builder.build();
+
+        let callbacks = std::mem::take(&mut self.on_toggled_callbacks);
+
+        if let Some(state) = self.two_way_state.take() {
+            check.connect_toggled(move |c| {
+                let active = c.is_active();
+                state.edit(move |it| *it = active);
+                for cb in &callbacks {
+                    cb(active);
+                }
+            });
+        } else if !callbacks.is_empty() {
+            check.connect_toggled(move |c| {
+                let active = c.is_active();
+                for cb in &callbacks {
+                    cb(active);
+                }
+            });
+        }
+
+        let weak = check.downgrade();
+        for subscribe in self.subscribes {
+            subscribe(weak.clone());
+        }
+
+        check
+    }
+}
+
+pub fn label() -> LabelBuilder {
+    Label::builder()
+}
+
+pub fn entry() -> EntryBuilder {
+    Entry::builder()
+}
+
+pub fn check_button() -> CheckButtonBuilder {
+    CheckButton::builder()
+}
+
+pub trait LabelBuilderExt {
+    fn reactive(self) -> ReactiveLabelBuilder;
+}
+
+impl LabelBuilderExt for LabelBuilder {
+    fn reactive(self) -> ReactiveLabelBuilder {
+        ReactiveLabelBuilder {
+            subscribes: Vec::new(),
+            builder: self,
+        }
+    }
+}
+
+pub trait EntryBuilderExt {
+    fn reactive(self) -> ReactiveEntryBuilder;
+}
+
+impl EntryBuilderExt for EntryBuilder {
+    fn reactive(self) -> ReactiveEntryBuilder {
+        ReactiveEntryBuilder {
+            subscribes: Vec::new(),
+            builder: self,
+            on_change_callbacks: Vec::new(),
+            two_way_state: None,
+        }
+    }
+}
+
+pub trait CheckButtonBuilderExt {
+    fn reactive(self) -> ReactiveCheckButtonBuilder;
+}
+
+impl CheckButtonBuilderExt for CheckButtonBuilder {
+    fn reactive(self) -> ReactiveCheckButtonBuilder {
+        ReactiveCheckButtonBuilder {
+            subscribes: Vec::new(),
+            builder: self,
+            on_toggled_callbacks: Vec::new(),
+            two_way_state: None,
+        }
+    }
+}
