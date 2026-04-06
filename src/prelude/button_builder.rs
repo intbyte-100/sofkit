@@ -37,13 +37,13 @@ impl ReactiveButtonBuilder {
     }
 
     pub fn label_state<T: Display + 'static, D: State<T> + 'static>(self, string: &D) -> Self {
-        self.bind_state(string, |button, it| {
+        self.with_state(string, |button, it| {
             button.set_label(it.to_string().as_str())
         })
     }
     
     pub fn css_class_state<T: Display + 'static, D: State<T> + 'static>(self, string: &D) -> Self {
-        self.bind_state(string, |button, it| {
+        self.with_state(string, |button, it| {
             for i in button.css_classes() {
                 button.remove_css_class(i.as_str());
             }
@@ -51,7 +51,17 @@ impl ReactiveButtonBuilder {
         })
     }
 
-    pub fn bind_state<T: 'static, S: Fn(Button, &T) + 'static + Clone, D: State<T> + 'static>(
+    pub fn bind_state<T: Clone + 'static, S: Fn(&Button, T) + 'static + Clone, D: State<T> + 'static>(
+        self,
+        state: &D,
+        callback: S,
+    ) -> Self {
+        self.with_state(state, move |button, it| {
+            callback(&button, it.clone());
+        })
+    }
+    
+    pub fn with_state<T: 'static, S: Fn(Button, &T) + 'static + Clone, D: State<T> + 'static>(
         mut self,
         state: &D,
         callback: S,
