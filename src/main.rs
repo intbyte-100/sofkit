@@ -1,31 +1,38 @@
 mod prelude;
 mod state;
 
+pub mod app;
+
 use crate::prelude::*;
 use crate::state::{State, StateHolder};
-use gtk::prelude::*;
 use gtk::{Application, ApplicationWindow, Box, glib};
+use gtk::{Button, prelude::*};
 
 fn build_ui() -> impl IsA<gtk::Widget> {
     statefull(|holder| {
         let counter = holder.state(0);
+        let text_state = holder.state(String::new());
 
         vbox![
-            label()
-                .reactive()
-                .text_state(&counter.clone().map(|it| format!("Clicked {it}"))),
+            label().reactive().text_state(&counter),
+            entry().reactive().bind_state_two_way(text_state.clone()),
+            entry().reactive().bind_state_two_way(text_state.clone()),
             
-            check_button()
-                .reactive()
-                .active_state(&counter.clone().map(|it| it % 2 == 0)),
-            
+            hbox![].append_all((0..10).map(|i| {
+                check_button()
+                    .margin_end(10)
+                    .reactive()
+                    .active_state(&counter.map(move |c| (*c + i) % 2 == 0))
+                    .build()
+            })),
             button()
-                .label("Increment!")
                 .margin_bottom(10)
                 .margin_end(10)
                 .margin_start(10)
                 .margin_top(10)
                 .reactive()
+                .label_state(&text_state)
+                .with_state(&counter, |it, value| it.set_vexpand(value % 2 == 0))
                 .on_click(move || {
                     counter.edit(|it| *it += 1);
                 }),
