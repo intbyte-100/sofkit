@@ -6,7 +6,6 @@ use std::{any::Any, rc::Weak};
 use gtk::glib::subclass::types::ObjectSubclassIsExt;
 use gtk::glib::{self, Object};
 
-// ─── State trait ───────────────────────────────────────────────────────────────
 
 pub trait State<T: 'static>: Clone {
     fn subscribe<W: Fn(&T) + 'static>(&self, callback: W) -> Option<()>;
@@ -28,7 +27,6 @@ pub trait State<T: 'static>: Clone {
     }
 }
 
-// ─── InnerState ────────────────────────────────────────────────────────────────
 
 pub struct StateCell<T> {
     state: T,
@@ -52,7 +50,6 @@ impl<T> Deref for StateCell<T> {
     }
 }
 
-// ─── StateHandle ──────────────────────────────────────────────────────────────
 
 #[derive(Clone)]
 pub struct StateHandle<T> {
@@ -125,7 +122,6 @@ impl<T: 'static + Clone> State<T> for StateHandle<T> {
     }
 }
 
-// ─── MappedState ───────────────────────────────────────────────────────────────
 
 #[derive(Clone)]
 pub struct MappedState<S, F: 'static, M: 'static, C>
@@ -210,7 +206,6 @@ where
     }
 }
 
-// ─── StateHolder (GObject) ─────────────────────────────────────────────────────
 
 mod imp {
     use std::rc::Rc;
