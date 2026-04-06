@@ -87,7 +87,11 @@ impl ReactiveEntryBuilder {
     }
 
     pub fn text_state<T: State<String> + 'static>(mut self, state: &T) -> Self {
-        self.bind_state(state, |entry, it| entry.set_text(it.as_str()))
+        self.bind_state(state, |entry, it| {
+            if it.as_str() != entry.text().as_str() {
+                entry.set_text(it.as_str())
+            }
+        })
     }
 
     pub fn bind_state<T: 'static, S: Fn(Entry, &T) + 'static + Clone, D: State<T> + 'static>(
@@ -109,17 +113,10 @@ impl ReactiveEntryBuilder {
 
     pub fn bind_state_two_way(mut self, state: StateHandle<String>) -> Self {
         let state_for_sub = state.clone();
-        self.subscribes.push(Box::new(move |entry_weak| {
-            let state_for_sub = state_for_sub.clone();
-            state_for_sub.subscribe(move |it| {
-                if let Some(entry) = entry_weak.upgrade() {
-                    entry.set_text(it.as_str());
-                }
-            });
-        }));
+        
 
         self.two_way_state = Some(state);
-        self
+        self.text_state(&state_for_sub)
     }
 
     pub fn on_changed<T: Fn(String) + 'static>(mut self, cb: T) -> Self {
@@ -128,18 +125,18 @@ impl ReactiveEntryBuilder {
     }
 
     pub fn on_changed_state(mut self, state: StateHandle<String>) -> Self {
-        
         let state_for_sub = state.clone();
         self.subscribes.push(Box::new(move |entry_weak| {
             let state_for_sub = state_for_sub.clone();
             state_for_sub.subscribe(move |it| {
                 if let Some(entry) = entry_weak.upgrade() {
-                    entry.set_text(it.as_str());
+                    if entry.text().as_str() == it.as_str() {
+                        entry.set_text(it.as_str());
+                    }
                 }
             });
         }));
 
-        
         self.on_change_callbacks.push(Box::new(move |text: String| {
             state.edit(move |it| *it = text.clone());
         }));
@@ -153,15 +150,20 @@ impl ReactiveEntryBuilder {
         let callbacks = std::mem::take(&mut self.on_change_callbacks);
 
         if let Some(state) = self.two_way_state.take() {
-            
             entry.connect_changed(move |e| {
-                let text = e.text().to_string();
-                
-                
-                state.set(text.clone());
-                for cb in &callbacks {
-                    cb(text.clone());
+                let text = e.text();
+                if let Some(borrowed) = state.get() {
+                    let update = if let Ok(borrowed) = borrowed.try_borrow() {
+                        borrowed.as_str() != text.as_str() 
+                    } else {
+                        false
+                    };
+                    
+                    if update {
+                        state.set(text.to_string());
+                    }
                 }
+                
             });
         } else if !callbacks.is_empty() {
             entry.connect_changed(move |e| {
@@ -232,7 +234,6 @@ impl ReactiveCheckButtonBuilder {
     }
 
     pub fn on_toggled_state(mut self, state: StateHandle<bool>) -> Self {
-        
         let state_for_sub = state.clone();
         self.subscribes.push(Box::new(move |cb_weak| {
             let state_for_sub = state_for_sub.clone();
@@ -243,7 +244,6 @@ impl ReactiveCheckButtonBuilder {
             });
         }));
 
-        
         self.two_way_state = Some(state);
         self
     }
