@@ -45,6 +45,8 @@ fn build_window(app: &Application) {
 }
 
 fn main() -> glib::ExitCode {
+    app::init();
+
     let app = Application::builder()
         .application_id("org.gtk_rs.HelloWorld1")
         .build();

@@ -1,10 +1,12 @@
-use std::cell::{Ref, RefCell};
+use std::cell::{Cell, Ref, RefCell};
 use std::ops::Deref;
 use std::rc::Rc;
 use std::{any::Any, rc::Weak};
 
 use gtk::glib::subclass::types::ObjectSubclassIsExt;
 use gtk::glib::{self, Object};
+
+use crate::app::current_frame;
 
 
 pub trait State<T: 'static>: Clone {
@@ -16,34 +18,46 @@ pub trait State<T: 'static>: Clone {
         self.edit(move |it| *it = value)
     }
 
-    fn get(&self) -> Option<Rc<RefCell<StateCell<T>>>>;
+    fn get(&self) -> Option<Rc<StateCell<T>>>;
 
-    fn map<M: 'static, C>(self, map: C) -> MappedState<Self, T, M, C>
+    fn map<M: 'static, C>(&self, map: C) -> MappedState<Self, T, M, C>
     where
         C: Fn(&T) -> M + Clone + 'static,
         Self: Sized,
     {
-        MappedState::new(self, map)
+        MappedState::new(self.clone(), map)
     }
 }
 
 
 pub struct StateCell<T> {
-    state: T,
-    subscribers: Vec<Box<dyn Fn(&T)>>,
+    scheculed_frame: Cell<u64>,
+
+    state: RefCell<T>,
+    subscribers: RefCell<Vec<Box<dyn Fn(&T)>>>,
 }
 
 impl<T> StateCell<T> {
     fn new(state: T) -> Self {
         Self {
-            state,
-            subscribers: Vec::new(),
+            scheculed_frame: Cell::new(0),
+            state: RefCell::new(state),
+            subscribers: RefCell::default(),
+        }
+    }
+
+    fn needs_subscription_update(&self) -> bool {
+        if self.scheculed_frame.get() != current_frame() {
+            self.scheculed_frame.set(current_frame());
+            true
+        } else {
+            false
         }
     }
 }
 
 impl<T> Deref for StateCell<T> {
-    type Target = T;
+    type Target = RefCell<T>;
 
     fn deref(&self) -> &Self::Target {
         &self.state
@@ -53,42 +67,36 @@ impl<T> Deref for StateCell<T> {
 
 #[derive(Clone)]
 pub struct StateHandle<T> {
-    inner: Weak<dyn Any>,
-    _marker: std::marker::PhantomData<T>,
+    inner: Weak<StateCell<T>>,
 }
 
-impl<T: 'static> StateHandle<T> {
+impl<T: 'static + Clone> StateHandle<T> {
     pub fn subscribe<W: Fn(&T) + 'static>(&self, callback: W) -> Option<()> {
-        self.inner.upgrade().and_then(|rc_any| {
-            rc_any
-                .downcast::<RefCell<StateCell<T>>>()
-                .and_then(|it| {
-                    callback(&it.borrow().state);
-                    it.borrow_mut().subscribers.push(Box::new(callback));
-                    Ok(())
-                })
-                .ok()
+        self.inner.upgrade().and_then(|it| {
+            callback(&it.borrow());
+            it.subscribers.borrow_mut().push(Box::new(callback));
+            Some(())
         })
     }
 
     pub fn edit<W: FnOnce(&mut T) + 'static>(&self, callback: W) -> Option<()> {
-        let result = self.inner.upgrade().and_then(|rc_any| {
-            rc_any
-                .downcast::<RefCell<StateCell<T>>>()
-                .and_then(|it| {
-                    {
-                        let mut it = it.borrow_mut();
-                        callback(&mut it.state);
-                    }
+        let result = {
+            self.inner.upgrade().and_then(|it| {
+                callback(&mut it.state.borrow_mut());
 
-                    let it = it.borrow();
-                    it.subscribers
-                        .iter()
-                        .for_each(|subscriber| subscriber(&it.state));
-                    Ok(())
-                })
-                .ok()
-        });
+                if it.needs_subscription_update() {
+                    glib::idle_add_local_once(move || {
+                        let value = it.state.borrow().clone();
+                        
+                        it.subscribers
+                            .borrow()
+                            .iter()
+                            .for_each(|subscriber| subscriber(&value));
+                    });
+                }
+                Some(())
+            })
+        };
 
         if cfg!(debug_assertions) && result.is_none() {
             eprintln!("Warning: State used without attach_state_holder()");
@@ -97,10 +105,8 @@ impl<T: 'static> StateHandle<T> {
         result
     }
 
-    pub fn get(&self) -> Option<Rc<RefCell<StateCell<T>>>> {
-        self.inner
-            .upgrade()
-            .and_then(|rc_any| rc_any.downcast::<RefCell<StateCell<T>>>().ok())
+    pub fn get(&self) -> Option<Rc<StateCell<T>>> {
+        self.inner.upgrade()
     }
 
     pub fn set(&self, value: T) -> Option<()> {
@@ -117,7 +123,7 @@ impl<T: 'static + Clone> State<T> for StateHandle<T> {
         StateHandle::edit(self, callback)
     }
 
-    fn get(&self) -> Option<Rc<RefCell<StateCell<T>>>> {
+    fn get(&self) -> Option<Rc<StateCell<T>>> {
         StateHandle::get(self)
     }
 }
@@ -130,7 +136,7 @@ where
     C: Fn(&F) -> M + Clone + 'static,
 {
     state: S,
-    cached: RefCell<Option<Rc<RefCell<StateCell<M>>>>>,
+    cached: RefCell<Option<Rc<StateCell<M>>>>,
     map: C,
     _marker: std::marker::PhantomData<(F, M)>,
 }
@@ -157,16 +163,16 @@ where
         *self.cached.borrow_mut() = self
             .state
             .get()
-            .map(|it| Rc::new(RefCell::new(StateCell::new((self.map)(&it.borrow().state)))));
+            .map(|it| Rc::new(StateCell::new((self.map)(&it.borrow()))));
 
         let map = self.map.clone();
-        
+
         self.cached.borrow().as_ref().and_then(|it| {
             let weak = Rc::downgrade(it);
 
             self.state.subscribe(move |it| {
                 if let Some(rc) = weak.upgrade() {
-                    rc.borrow_mut().state = (map)(&it);
+                    *rc.borrow_mut() = (map)(&it);
                 }
             });
             Some(())
@@ -187,7 +193,7 @@ where
                 let rc = rc.clone();
 
                 self.state.subscribe(move |value| {
-                    callback(&rc.borrow().state);
+                    callback(&rc.borrow());
                 })
             }
             None => None,
@@ -198,7 +204,7 @@ where
         None
     }
 
-    fn get(&self) -> Option<Rc<RefCell<StateCell<M>>>> {
+    fn get(&self) -> Option<Rc<StateCell<M>>> {
         match self.state.get() {
             Some(_) => self.cached.borrow().clone(),
             None => None,
@@ -239,14 +245,11 @@ impl StateHolder {
     }
 
     pub fn state<T: 'static>(&self, value: T) -> StateHandle<T> {
-        let rc: Rc<dyn Any> = Rc::new(RefCell::new(StateCell::new(value)));
+        let rc = Rc::new(StateCell::new(value));
         let weak = Rc::downgrade(&rc);
 
         self.imp().states.borrow_mut().push(rc);
 
-        StateHandle {
-            inner: weak,
-            _marker: std::marker::PhantomData,
-        }
+        StateHandle { inner: weak }
     }
 }
