@@ -6,7 +6,7 @@ use std::{any::Any, rc::Weak};
 use gtk::glib::subclass::types::ObjectSubclassIsExt;
 use gtk::glib::{self, Object};
 
-use crate::app::current_frame;
+use crate::reactive_frame::current_reactive_frame;
 
 pub trait State<T: 'static>: Clone {
     fn subscribe<W: Fn(&T) + 'static>(&self, callback: W) -> Option<()>;
@@ -44,8 +44,8 @@ impl<T> StateCell<T> {
     }
 
     fn needs_subscription_update(&self) -> bool {
-        if self.scheculed_frame.get() != current_frame() {
-            self.scheculed_frame.set(current_frame());
+        if self.scheculed_frame.get() != current_reactive_frame() {
+            self.scheculed_frame.set(current_reactive_frame());
             true
         } else {
             false
