@@ -1,5 +1,4 @@
-use std::ops::Deref;
-use std::{cell::RefCell, fmt::Display, rc::Rc};
+use std::fmt::Display;
 
 use gtk::glib::WeakRef;
 use gtk::glib::object::ObjectExt;

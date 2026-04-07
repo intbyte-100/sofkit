@@ -1,8 +1,8 @@
 use crate::state::StateHolder;
 use gtk::glib::object::{IsA, ObjectExt};
-use gtk::prelude::WidgetExt;
 
-const STATE_HOLDER_KEY: &str = "state-holder";
+
+const STATE_HOLDER_KEY: &str = "sofkit-state-holder";
 
 pub fn statefull<T: FnOnce(&StateHolder) -> W, W: IsA<gtk::Widget>>(
     build_ui: T,

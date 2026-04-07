@@ -4,9 +4,8 @@ mod state;
 pub mod app;
 
 use crate::prelude::*;
-use crate::state::{State, StateHolder};
-use gtk::{Application, ApplicationWindow, Box, glib};
-use gtk::{Button, prelude::*};
+use crate::state::State;
+use gtk::{Application, ApplicationWindow, glib, prelude::*};
 
 fn build_ui() -> impl IsA<gtk::Widget> {
     statefull(|holder| {

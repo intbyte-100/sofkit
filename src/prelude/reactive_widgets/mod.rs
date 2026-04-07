@@ -1,4 +1,4 @@
-use std::{cell::RefCell, fmt::Display, rc::Rc};
+use std::fmt::Display;
 
 use gtk::glib::WeakRef;
 use gtk::prelude::*;
@@ -121,26 +121,6 @@ impl ReactiveEntryBuilder {
 
     pub fn on_changed<T: Fn(String) + 'static>(mut self, cb: T) -> Self {
         self.on_change_callbacks.push(Box::new(cb));
-        self
-    }
-
-    pub fn on_changed_state(mut self, state: StateHandle<String>) -> Self {
-        let state_for_sub = state.clone();
-        self.subscribes.push(Box::new(move |entry_weak| {
-            let state_for_sub = state_for_sub.clone();
-            state_for_sub.subscribe(move |it| {
-                if let Some(entry) = entry_weak.upgrade() {
-                    if entry.text().as_str() == it.as_str() {
-                        entry.set_text(it.as_str());
-                    }
-                }
-            });
-        }));
-
-        self.on_change_callbacks.push(Box::new(move |text: String| {
-            state.edit(move |it| *it = text.clone());
-        }));
-
         self
     }
 
