@@ -8,7 +8,6 @@ use gtk::glib::{self, Object};
 
 use crate::app::current_frame;
 
-
 pub trait State<T: 'static>: Clone {
     fn subscribe<W: Fn(&T) + 'static>(&self, callback: W) -> Option<()>;
 
@@ -29,10 +28,8 @@ pub trait State<T: 'static>: Clone {
     }
 }
 
-
 pub struct StateCell<T> {
     scheculed_frame: Cell<u64>,
-
     state: RefCell<T>,
     subscribers: RefCell<Vec<Box<dyn Fn(&T)>>>,
 }
@@ -64,14 +61,13 @@ impl<T> Deref for StateCell<T> {
     }
 }
 
-
 #[derive(Clone)]
 pub struct StateHandle<T> {
     inner: Weak<StateCell<T>>,
 }
 
 impl<T: 'static + Clone> StateHandle<T> {
-    pub fn subscribe<W: Fn(&T) + 'static>(&self, callback: W) -> Option<()> {
+    fn subscribe<W: Fn(&T) + 'static>(&self, callback: W) -> Option<()> {
         self.inner.upgrade().and_then(|it| {
             callback(&it.borrow());
             it.subscribers.borrow_mut().push(Box::new(callback));
@@ -79,19 +75,27 @@ impl<T: 'static + Clone> StateHandle<T> {
         })
     }
 
-    pub fn edit<W: FnOnce(&mut T) + 'static>(&self, callback: W) -> Option<()> {
+    fn edit<W: FnOnce(&mut T) + 'static>(&self, callback: W) -> Option<()> {
         let result = {
             self.inner.upgrade().and_then(|it| {
                 callback(&mut it.state.borrow_mut());
 
                 if it.needs_subscription_update() {
                     glib::idle_add_local_once(move || {
-                        let value = it.state.borrow().clone();
-                        
-                        it.subscribers
-                            .borrow()
-                            .iter()
-                            .for_each(|subscriber| subscriber(&value));
+                        let value = it.state.borrow().clone(); 
+
+                        let mut subscribers =
+                            std::mem::take::<Vec<_>>(&mut it.subscribers.borrow_mut());
+
+                        for subscriber in &subscribers {
+                            subscriber(&value);
+                        }
+
+                        let mut_ref = &mut it.subscribers.borrow_mut();
+
+                        std::mem::swap(&mut subscribers, mut_ref);
+
+                        mut_ref.extend(subscribers);
                     });
                 }
                 Some(())
@@ -127,7 +131,6 @@ impl<T: 'static + Clone> State<T> for StateHandle<T> {
         StateHandle::get(self)
     }
 }
-
 
 #[derive(Clone)]
 pub struct MappedState<S, F: 'static, M: 'static, C>
@@ -211,7 +214,6 @@ where
         }
     }
 }
-
 
 mod imp {
     use std::rc::Rc;
