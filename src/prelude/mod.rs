@@ -4,7 +4,7 @@ mod macros;
 mod box_wrapper;
 mod button_builder;
 mod reactive_widgets;
-mod state_ext;
+pub(crate) mod state_ext;
 
 pub use box_wrapper::BoxWrapper;
 pub use button_builder::{ButtonBuilderExt, button};

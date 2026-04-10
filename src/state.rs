@@ -1,15 +1,29 @@
+use crate::prelude::state_ext::StateHolderExt;
 use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 use std::ops::Deref;
 use std::rc::Rc;
 use std::{any::Any, rc::Weak};
 
+use gtk::Widget;
+use gtk::glib::object::IsA;
 use gtk::glib::subclass::types::ObjectSubclassIsExt;
 use gtk::glib::{self, Object};
 
 use crate::reactive_frame::current_reactive_frame;
 
 pub trait State<T: 'static>: Clone {
-    fn subscribe<W: Fn(&T) + 'static>(&self, callback: W) -> Option<()>;
+    fn subscribe<W: Fn(&T) + 'static>(&self, callback: W) -> Option<Subscription>;
+
+    #[inline]
+    fn subscribe_widget<W: Fn(&T) + 'static>(
+        &self,
+        widget: &impl IsA<Widget>,
+        callback: W,
+    ) -> Option<()> {
+        self.subscribe(callback)
+            .map(|s| widget.attach_subscription(s))
+    }
 
     fn edit<W: FnOnce(&mut T) + 'static>(&self, callback: W) -> Option<()>;
 
@@ -31,7 +45,7 @@ pub trait State<T: 'static>: Clone {
 pub struct StateCell<T> {
     scheculed_frame: Cell<u64>,
     state: RefCell<T>,
-    subscribers: RefCell<Vec<Box<dyn Fn(&T)>>>,
+    subscribers: RefCell<HashMap<i32, Box<dyn Fn(&T)>>>,
 }
 
 impl<T> StateCell<T> {
@@ -61,17 +75,34 @@ impl<T> Deref for StateCell<T> {
     }
 }
 
+thread_local! {
+    static SUBSCRIPTION_ID: Cell<u32> = Cell::default();
+}
+
+fn new_subscription_id() -> u32 {
+    SUBSCRIPTION_ID.with(|it| {
+        let id = it.get();
+        it.set(id + 1);
+        id
+    })
+}
+
 #[derive(Clone)]
 pub struct StateHandle<T> {
     inner: Weak<StateCell<T>>,
 }
 
 impl<T: 'static + Clone> StateHandle<T> {
-    fn subscribe<W: Fn(&T) + 'static>(&self, callback: W) -> Option<()> {
-        self.inner.upgrade().and_then(|it| {
+    fn subscribe<W: Fn(&T) + 'static>(&self, callback: W) -> Option<Subscription> {
+        self.inner.upgrade().map(|it| {
             callback(&it.borrow());
-            it.subscribers.borrow_mut().push(Box::new(callback));
-            Some(())
+
+            let id = new_subscription_id() as i32;
+            it.subscribers.borrow_mut().insert(id, Box::new(callback));
+
+            Subscription::new(Box::new(move || {
+                it.subscribers.borrow_mut().remove(&id);
+            }))
         })
     }
 
@@ -82,12 +113,12 @@ impl<T: 'static + Clone> StateHandle<T> {
 
                 if it.needs_subscription_update() {
                     glib::idle_add_local_once(move || {
-                        let value = it.state.borrow().clone(); 
+                        let value = it.state.borrow().clone();
 
                         let mut subscribers =
-                            std::mem::take::<Vec<_>>(&mut it.subscribers.borrow_mut());
+                            std::mem::take::<HashMap<_, _>>(&mut it.subscribers.borrow_mut());
 
-                        for subscriber in &subscribers {
+                        for subscriber in subscribers.values() {
                             subscriber(&value);
                         }
 
@@ -119,7 +150,7 @@ impl<T: 'static + Clone> StateHandle<T> {
 }
 
 impl<T: 'static + Clone> State<T> for StateHandle<T> {
-    fn subscribe<W: Fn(&T) + 'static>(&self, callback: W) -> Option<()> {
+    fn subscribe<W: Fn(&T) + 'static>(&self, callback: W) -> Option<Subscription> {
         StateHandle::subscribe(self, callback)
     }
 
@@ -188,7 +219,7 @@ where
     S: State<F>,
     C: Fn(&F) -> M + Clone + 'static,
 {
-    fn subscribe<W: Fn(&M) + 'static>(&self, callback: W) -> Option<()> {
+    fn subscribe<W: Fn(&M) + 'static>(&self, callback: W) -> Option<Subscription> {
         let cached = self.cached.borrow();
 
         match cached.as_ref() {
@@ -253,5 +284,46 @@ impl StateHolder {
         self.imp().states.borrow_mut().push(rc);
 
         StateHandle { inner: weak }
+    }
+}
+
+pub struct Subscription {
+    on_drop: Option<Box<dyn FnOnce()>>,
+}
+
+impl Subscription {
+    pub fn new(on_drop: Box<dyn FnOnce()>) -> Self {
+        Self {
+            on_drop: Some(on_drop),
+        }
+    }
+
+    pub fn unsubscribe(&mut self) {
+        match std::mem::take(&mut self.on_drop) {
+            Some(unsubscribe) => unsubscribe(),
+            None => {}
+        }
+    }
+}
+
+impl Drop for Subscription {
+    fn drop(&mut self) {
+        self.unsubscribe();
+    }
+}
+
+pub struct SubscriptionHolder {
+    subscription: RefCell<Vec<Subscription>>,
+}
+
+impl SubscriptionHolder {
+    pub fn new() -> Self {
+        Self {
+            subscription: Default::default(),
+        }
+    }
+
+    pub fn attach_subscription(&self, subscription: Subscription) {
+        self.subscription.borrow_mut().push(subscription);
     }
 }

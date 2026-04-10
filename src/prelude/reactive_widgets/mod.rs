@@ -10,7 +10,7 @@ use gtk::{
 use crate::state::{State, StateHandle};
 
 pub struct ReactiveLabelBuilder {
-    subscribes: Vec<Box<dyn Fn(WeakRef<Label>)>>,
+    subscribes: Vec<Box<dyn Fn(&Label)>>,
     builder: LabelBuilder,
 }
 
@@ -40,10 +40,11 @@ impl ReactiveLabelBuilder {
         callback: S,
     ) -> Self {
         let state = state.clone();
-        self.subscribes.push(Box::new(move |lbl_weak| {
+        self.subscribes.push(Box::new(move |label| {
             let callback = callback.clone();
-            state.subscribe(move |it| {
-                if let Some(label) = lbl_weak.upgrade() {
+            let label_weak = label.downgrade();
+            state.subscribe_widget(label, move |it| {
+                if let Some(label) = label_weak.upgrade() {
                     callback(label, it);
                 }
             });
@@ -53,16 +54,15 @@ impl ReactiveLabelBuilder {
 
     pub fn build(self) -> Label {
         let label = self.builder.build();
-        let weak = label.downgrade();
         for subscribe in self.subscribes {
-            subscribe(weak.clone());
+            subscribe(&label);
         }
         label
     }
 }
 
 pub struct ReactiveEntryBuilder {
-    subscribes: Vec<Box<dyn Fn(WeakRef<Entry>)>>,
+    subscribes: Vec<Box<dyn Fn(&Entry)>>,
     builder: EntryBuilder,
     on_change_callbacks: Vec<Box<dyn Fn(String)>>,
     two_way_state: Option<StateHandle<String>>,
@@ -100,20 +100,22 @@ impl ReactiveEntryBuilder {
         callback: S,
     ) -> Self {
         let state = state.clone();
-        self.subscribes.push(Box::new(move |entry_weak| {
+        self.subscribes.push(Box::new(move |entry| {
             let callback = callback.clone();
-            state.subscribe(move |it| {
+            let entry_weak = entry.downgrade();
+
+            state.subscribe_widget(entry, move |it| {
                 if let Some(entry) = entry_weak.upgrade() {
                     callback(entry, it);
                 }
             });
         }));
+
         self
     }
 
     pub fn bind_state_two_way(mut self, state: StateHandle<String>) -> Self {
         let state_for_sub = state.clone();
-        
 
         self.two_way_state = Some(state);
         self.text_state(&state_for_sub)
@@ -134,16 +136,15 @@ impl ReactiveEntryBuilder {
                 let text = e.text();
                 if let Some(borrowed) = state.get() {
                     let update = if let Ok(borrowed) = borrowed.try_borrow() {
-                        borrowed.as_str() != text.as_str() 
+                        borrowed.as_str() != text.as_str()
                     } else {
                         false
                     };
-                    
+
                     if update {
                         state.set(text.to_string());
                     }
                 }
-                
             });
         } else if !callbacks.is_empty() {
             entry.connect_changed(move |e| {
@@ -154,9 +155,8 @@ impl ReactiveEntryBuilder {
             });
         }
 
-        let weak = entry.downgrade();
         for subscribe in self.subscribes {
-            subscribe(weak.clone());
+            subscribe(&entry);
         }
 
         entry
@@ -164,7 +164,7 @@ impl ReactiveEntryBuilder {
 }
 
 pub struct ReactiveCheckButtonBuilder {
-    subscribes: Vec<Box<dyn Fn(WeakRef<CheckButton>)>>,
+    subscribes: Vec<Box<dyn Fn(&CheckButton)>>,
     builder: CheckButtonBuilder,
     on_toggled_callbacks: Vec<Box<dyn Fn(bool)>>,
     two_way_state: Option<StateHandle<bool>>,
@@ -202,9 +202,10 @@ impl ReactiveCheckButtonBuilder {
         callback: S,
     ) -> Self {
         let state = state.clone();
-        self.subscribes.push(Box::new(move |cb_weak| {
+        self.subscribes.push(Box::new(move |check_button| {
             let callback = callback.clone();
-            state.subscribe(move |it| {
+            let cb_weak = check_button.downgrade();
+            state.subscribe_widget(check_button, move |it| {
                 if let Some(cb) = cb_weak.upgrade() {
                     callback(cb, it);
                 }
@@ -215,17 +216,11 @@ impl ReactiveCheckButtonBuilder {
 
     pub fn on_toggled_state(mut self, state: StateHandle<bool>) -> Self {
         let state_for_sub = state.clone();
-        self.subscribes.push(Box::new(move |cb_weak| {
-            let state_for_sub = state_for_sub.clone();
-            state_for_sub.subscribe(move |it| {
-                if let Some(cb) = cb_weak.upgrade() {
-                    cb.set_active(*it);
-                }
-            });
-        }));
 
         self.two_way_state = Some(state);
-        self
+        self.bind_state(&state_for_sub, |cb, it| {
+            cb.set_active(*it);
+        })
     }
 
     pub fn on_toggled<T: Fn(bool) + 'static>(mut self, cb: T) -> Self {
@@ -255,9 +250,8 @@ impl ReactiveCheckButtonBuilder {
             });
         }
 
-        let weak = check.downgrade();
         for subscribe in self.subscribes {
-            subscribe(weak.clone());
+            subscribe(&check);
         }
 
         check

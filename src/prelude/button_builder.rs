@@ -9,7 +9,7 @@ use crate::state::State;
 
 pub struct ReactiveButtonBuilder {
     on_click: Option<Box<dyn Fn()>>,
-    subscribes: Vec<Box<dyn Fn(WeakRef<Button>)>>,
+    subscribes: Vec<Box<dyn Fn(&Button)>>,
     builder: ButtonBuilder,
 }
 
@@ -68,11 +68,13 @@ impl ReactiveButtonBuilder {
         
         let state = state.clone();
         
-        self.subscribes.push(Box::new(move |btn| {
+        self.subscribes.push(Box::new(move |button| {
             let callback = callback.clone();
             
-            state.subscribe(move |it| {
-                if let Some(button_ref) = btn.upgrade() {
+            let button_weak = button.downgrade();
+            
+            state.subscribe_widget(button, move |it| {
+                if let Some(button_ref) = button_weak.upgrade() {
                     callback(button_ref, it);
                 }
             });
@@ -87,11 +89,9 @@ impl ReactiveButtonBuilder {
         if let Some(on_click) = self.on_click {
             button.connect_clicked(move |_| on_click());
         }
-
-        let weak = button.downgrade();
         
         for subscribe in self.subscribes {
-            subscribe(weak.clone());
+            subscribe(&button);
         }
 
         button
