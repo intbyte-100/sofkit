@@ -25,13 +25,20 @@ pub trait State<T: 'static>: Clone {
             .map(|s| widget.attach_subscription(s))
     }
 
+    fn with<W: FnOnce(&T) -> D, D>(&self, callback: W) -> Option<D>;
+
     fn edit<W: FnOnce(&mut T) + 'static>(&self, callback: W) -> Option<()>;
 
     fn update(&self, value: T) -> Option<()> {
         self.edit(move |it| *it = value)
     }
 
-    fn get(&self) -> Option<Rc<StateCell<T>>>;
+    fn get(&self) -> Option<T>
+    where
+        T: Clone,
+    {
+        self.with(|it| it.clone())
+    }
 
     fn map<M: 'static, C>(&self, map: C) -> MappedState<Self, T, M, C>
     where
@@ -94,6 +101,7 @@ pub struct StateHandle<T> {
 
 impl<T: 'static + Clone> StateHandle<T> {
     fn subscribe<W: Fn(&T) + 'static>(&self, callback: W) -> Option<Subscription> {
+        let weak = self.inner.clone();
         self.inner.upgrade().map(|it| {
             callback(&it.borrow());
 
@@ -101,7 +109,9 @@ impl<T: 'static + Clone> StateHandle<T> {
             it.subscribers.borrow_mut().insert(id, Box::new(callback));
 
             Subscription::new(Box::new(move || {
-                it.subscribers.borrow_mut().remove(&id);
+                if let Some(it) = weak.upgrade() {
+                    it.subscribers.borrow_mut().remove(&id);
+                }
             }))
         })
     }
@@ -158,21 +168,68 @@ impl<T: 'static + Clone> State<T> for StateHandle<T> {
         StateHandle::edit(self, callback)
     }
 
-    fn get(&self) -> Option<Rc<StateCell<T>>> {
-        StateHandle::get(self)
+    fn with<W: FnOnce(&T) -> D, D>(&self, callback: W) -> Option<D> {
+        self.inner
+            .upgrade()
+            .map(|cell| callback(&cell.state.borrow()))
+    }
+}
+
+struct InnerMappedState<S, F: 'static, M: 'static, C>
+where
+    S: State<F> + 'static,
+    C: Fn(&F) -> M + Clone + 'static,
+{
+    state: S,
+    cached: RefCell<Option<M>>,
+    reactive_frame: Cell<u64>,
+    map: C,
+    _marker: std::marker::PhantomData<(F, M)>,
+}
+
+impl<S, F: 'static, M: 'static, C> InnerMappedState<S, F, M, C>
+where
+    S: State<F>,
+    C: Fn(&F) -> M + Clone + 'static,
+{
+    fn new(state: S, map: C) -> Rc<Self> {
+        Self {
+            cached: state.with(|it| map(it)).into(),
+            state: state,
+            reactive_frame: Default::default(),
+            map,
+            _marker: std::marker::PhantomData,
+        }
+        .into()
+    }
+
+    fn apply_map(&self, value: &F) {
+        if self.reactive_frame.get() != current_reactive_frame() {
+            self.cached.replace(Some((self.map)(value)));
+            self.reactive_frame.set(current_reactive_frame());
+        }
+    }
+
+    fn subscribe<W: Fn(&M) + 'static>(self: Rc<Self>, callback: W) -> Option<Subscription> {
+        let cloned = self.clone();
+        self.state.subscribe(move |value| {
+            cloned.apply_map(value);
+            callback(&cloned.cached.borrow().as_ref().unwrap());
+        })
+    }
+
+    fn with<W: FnOnce(&M) -> D, D>(self: Rc<Self>, callback: W) -> Option<D> {
+        self.cached.borrow().as_ref().map(|it| callback(&it))
     }
 }
 
 #[derive(Clone)]
 pub struct MappedState<S, F: 'static, M: 'static, C>
 where
-    S: State<F>,
+    S: State<F> + 'static,
     C: Fn(&F) -> M + Clone + 'static,
 {
-    state: S,
-    cached: RefCell<Option<Rc<StateCell<M>>>>,
-    map: C,
-    _marker: std::marker::PhantomData<(F, M)>,
+    inner: Rc<InnerMappedState<S, F, M, C>>,
 }
 
 impl<S, F: 'static, M: 'static, C> MappedState<S, F, M, C>
@@ -181,36 +238,9 @@ where
     C: Fn(&F) -> M + Clone + 'static,
 {
     pub fn new(state: S, map: C) -> Self {
-        let mapped = Self {
-            state,
-            cached: RefCell::new(None),
-            map,
-            _marker: std::marker::PhantomData,
-        };
-
-        mapped.apply_map();
-
-        mapped
-    }
-
-    fn apply_map(&self) {
-        *self.cached.borrow_mut() = self
-            .state
-            .get()
-            .map(|it| Rc::new(StateCell::new((self.map)(&it.borrow()))));
-
-        let map = self.map.clone();
-
-        self.cached.borrow().as_ref().and_then(|it| {
-            let weak = Rc::downgrade(it);
-
-            self.state.subscribe(move |it| {
-                if let Some(rc) = weak.upgrade() {
-                    *rc.borrow_mut() = (map)(&it);
-                }
-            });
-            Some(())
-        });
+        Self {
+            inner: InnerMappedState::new(state, map),
+        }
     }
 }
 
@@ -220,29 +250,15 @@ where
     C: Fn(&F) -> M + Clone + 'static,
 {
     fn subscribe<W: Fn(&M) + 'static>(&self, callback: W) -> Option<Subscription> {
-        let cached = self.cached.borrow();
-
-        match cached.as_ref() {
-            Some(rc) => {
-                let rc = rc.clone();
-
-                self.state.subscribe(move |value| {
-                    callback(&rc.borrow());
-                })
-            }
-            None => None,
-        }
+        self.inner.clone().subscribe(callback)
     }
 
     fn edit<W: FnOnce(&mut M) + 'static>(&self, _callback: W) -> Option<()> {
         None
     }
 
-    fn get(&self) -> Option<Rc<StateCell<M>>> {
-        match self.state.get() {
-            Some(_) => self.cached.borrow().clone(),
-            None => None,
-        }
+    fn with<W: FnOnce(&M) -> D, D>(&self, callback: W) -> Option<D> {
+        self.inner.clone().with(callback)
     }
 }
 
@@ -300,7 +316,9 @@ impl Subscription {
 
     pub fn unsubscribe(&mut self) {
         match std::mem::take(&mut self.on_drop) {
-            Some(unsubscribe) => unsubscribe(),
+            Some(unsubscribe) => {
+                glib::idle_add_local_once(unsubscribe);
+            }
             None => {}
         }
     }
