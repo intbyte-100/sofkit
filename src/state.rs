@@ -50,7 +50,7 @@ pub trait State<T: 'static>: Clone {
 }
 
 pub struct StateCell<T> {
-    scheculed_frame: Cell<u64>,
+    scheduled_frame: Cell<u64>,
     state: RefCell<T>,
     subscribers: RefCell<HashMap<i32, Box<dyn Fn(&T)>>>,
 }
@@ -58,15 +58,15 @@ pub struct StateCell<T> {
 impl<T> StateCell<T> {
     fn new(state: T) -> Self {
         Self {
-            scheculed_frame: Cell::new(0),
+            scheduled_frame: Cell::new(0),
             state: RefCell::new(state),
             subscribers: RefCell::default(),
         }
     }
 
     fn needs_subscription_update(&self) -> bool {
-        if self.scheculed_frame.get() != current_reactive_frame() {
-            self.scheculed_frame.set(current_reactive_frame());
+        if self.scheduled_frame.get() != current_reactive_frame() {
+            self.scheduled_frame.set(current_reactive_frame());
             true
         } else {
             false
@@ -118,7 +118,7 @@ impl<T: 'static + Clone> StateHandle<T> {
 
     fn edit<W: FnOnce(&mut T) + 'static>(&self, callback: W) -> Option<()> {
         let result = {
-            self.inner.upgrade().and_then(|it| {
+            self.inner.upgrade().map(|it| {
                 callback(&mut it.state.borrow_mut());
 
                 if it.needs_subscription_update() {
@@ -139,7 +139,7 @@ impl<T: 'static + Clone> StateHandle<T> {
                         mut_ref.extend(subscribers);
                     });
                 }
-                Some(())
+                ()
             })
         };
 
@@ -195,7 +195,7 @@ where
     fn new(state: S, map: C) -> Rc<Self> {
         Self {
             cached: state.with(|it| map(it)).into(),
-            state: state,
+            state,
             reactive_frame: Default::default(),
             map,
             _marker: std::marker::PhantomData,
@@ -214,12 +214,12 @@ where
         let cloned = self.clone();
         self.state.subscribe(move |value| {
             cloned.apply_map(value);
-            callback(&cloned.cached.borrow().as_ref().unwrap());
+            callback(cloned.cached.borrow().as_ref().unwrap());
         })
     }
 
     fn with<W: FnOnce(&M) -> D, D>(self: Rc<Self>, callback: W) -> Option<D> {
-        self.cached.borrow().as_ref().map(|it| callback(&it))
+        self.cached.borrow().as_ref().map(|it| callback(it))
     }
 }
 
@@ -315,11 +315,8 @@ impl Subscription {
     }
 
     pub fn unsubscribe(&mut self) {
-        match std::mem::take(&mut self.on_drop) {
-            Some(unsubscribe) => {
-                glib::idle_add_local_once(unsubscribe);
-            }
-            None => {}
+        if let Some(unsubscribe) = std::mem::take(&mut self.on_drop) {
+            glib::idle_add_local_once(unsubscribe);
         }
     }
 }

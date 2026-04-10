@@ -1,6 +1,5 @@
 use std::fmt::Display;
 
-use gtk::glib::WeakRef;
 use gtk::glib::object::ObjectExt;
 use gtk::prelude::{ButtonExt, WidgetExt};
 use gtk::{Button, builders::ButtonBuilder};

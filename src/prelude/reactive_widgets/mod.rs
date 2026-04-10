@@ -1,6 +1,5 @@
 use std::fmt::Display;
 
-use gtk::glib::WeakRef;
 use gtk::prelude::*;
 use gtk::{
     CheckButton, Entry, Label,
@@ -86,7 +85,7 @@ impl ReactiveEntryBuilder {
         self
     }
 
-    pub fn text_state<T: State<String> + 'static>(mut self, state: &T) -> Self {
+    pub fn text_state<T: State<String> + 'static>(self, state: &T) -> Self {
         self.bind_state(state, |entry, it| {
             if it.as_str() != entry.text().as_str() {
                 entry.set_text(it.as_str())
@@ -188,7 +187,7 @@ impl ReactiveCheckButtonBuilder {
         self
     }
 
-    pub fn active_state<T: State<bool> + 'static>(mut self, state: &T) -> Self {
+    pub fn active_state<T: State<bool> + 'static>(self, state: &T) -> Self {
         self.bind_state(state, |cb, it| cb.set_active(*it))
     }
 
