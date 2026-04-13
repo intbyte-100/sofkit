@@ -13,10 +13,10 @@ use gtk::glib::{self, Object};
 use crate::reactive_frame::current_reactive_frame;
 
 pub trait State<T: 'static>: Clone {
-    fn subscribe<W: Fn(&T) + 'static>(&self, callback: W) -> Option<Subscription>;
+    fn subscribe<W: Fn(&StateAccessor<T>) + 'static>(&self, callback: W) -> Option<Subscription>;
 
     #[inline]
-    fn subscribe_widget<W: Fn(&T) + 'static>(
+    fn subscribe_widget<W: Fn(&StateAccessor<T>) + 'static>(
         &self,
         widget: &impl IsA<Widget>,
         callback: W,
@@ -49,17 +49,44 @@ pub trait State<T: 'static>: Clone {
     }
 }
 
+pub struct StateAccessor<T> {
+    value: RefCell<T>,
+}
+
+impl<T> StateAccessor<T> {
+    pub fn new(value: T) -> Self {
+        Self {
+            value: RefCell::new(value),
+        }
+    }
+
+    pub fn with<W: FnOnce(&T) -> M, M>(&self, callback: W) -> M {
+        callback(&self.value.borrow())
+    }
+
+    pub fn get(&self) -> T
+    where
+        T: Clone,
+    {
+        self.value.borrow().clone()
+    }
+
+    fn with_mut<W: FnOnce(&mut T) -> M, M>(&self, callback: W) -> M {
+        callback(&mut self.value.borrow_mut())
+    }
+}
+
 pub struct StateCell<T> {
     scheduled_frame: Cell<u64>,
-    state: RefCell<T>,
-    subscribers: RefCell<HashMap<i32, Box<dyn Fn(&T)>>>,
+    state: StateAccessor<T>,
+    subscribers: RefCell<HashMap<i32, Box<dyn Fn(&StateAccessor<T>)>>>,
 }
 
 impl<T> StateCell<T> {
     fn new(state: T) -> Self {
         Self {
             scheduled_frame: Cell::new(0),
-            state: RefCell::new(state),
+            state: StateAccessor::new(state),
             subscribers: RefCell::default(),
         }
     }
@@ -71,14 +98,6 @@ impl<T> StateCell<T> {
         } else {
             false
         }
-    }
-}
-
-impl<T> Deref for StateCell<T> {
-    type Target = RefCell<T>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.state
     }
 }
 
@@ -100,10 +119,10 @@ pub struct StateHandle<T> {
 }
 
 impl<T: 'static + Clone> StateHandle<T> {
-    fn subscribe<W: Fn(&T) + 'static>(&self, callback: W) -> Option<Subscription> {
+    fn subscribe<W: Fn(&StateAccessor<T>) + 'static>(&self, callback: W) -> Option<Subscription> {
         let weak = self.inner.clone();
         self.inner.upgrade().map(|it| {
-            callback(&it.borrow());
+            callback(&it.state);
 
             let id = new_subscription_id() as i32;
             it.subscribers.borrow_mut().insert(id, Box::new(callback));
@@ -119,17 +138,15 @@ impl<T: 'static + Clone> StateHandle<T> {
     fn edit<W: FnOnce(&mut T) + 'static>(&self, callback: W) -> Option<()> {
         let result = {
             self.inner.upgrade().map(|it| {
-                callback(&mut it.state.borrow_mut());
+                it.state.with_mut(callback);
 
                 if it.needs_subscription_update() {
                     glib::idle_add_local_once(move || {
-                        let value = it.state.borrow().clone();
-
                         let mut subscribers =
                             std::mem::take::<HashMap<_, _>>(&mut it.subscribers.borrow_mut());
 
                         for subscriber in subscribers.values() {
-                            subscriber(&value);
+                            subscriber(&it.state);
                         }
 
                         let mut_ref = &mut it.subscribers.borrow_mut();
@@ -160,7 +177,7 @@ impl<T: 'static + Clone> StateHandle<T> {
 }
 
 impl<T: 'static + Clone> State<T> for StateHandle<T> {
-    fn subscribe<W: Fn(&T) + 'static>(&self, callback: W) -> Option<Subscription> {
+    fn subscribe<W: Fn(&StateAccessor<T>) + 'static>(&self, callback: W) -> Option<Subscription> {
         StateHandle::subscribe(self, callback)
     }
 
@@ -169,9 +186,7 @@ impl<T: 'static + Clone> State<T> for StateHandle<T> {
     }
 
     fn with<W: FnOnce(&T) -> D, D>(&self, callback: W) -> Option<D> {
-        self.inner
-            .upgrade()
-            .map(|cell| callback(&cell.state.borrow()))
+        self.inner.upgrade().map(|cell| cell.state.with(callback))
     }
 }
 
@@ -181,7 +196,7 @@ where
     C: Fn(&F) -> M + Clone + 'static,
 {
     state: S,
-    cached: RefCell<Option<M>>,
+    cached: RefCell<Option<StateAccessor<M>>>,
     reactive_frame: Cell<u64>,
     map: C,
     _marker: std::marker::PhantomData<(F, M)>,
@@ -194,7 +209,7 @@ where
 {
     fn new(state: S, map: C) -> Rc<Self> {
         Self {
-            cached: state.with(|it| map(it)).into(),
+            cached: state.with(map.clone()).map(StateAccessor::new).into(),
             state,
             reactive_frame: Default::default(),
             map,
@@ -205,21 +220,25 @@ where
 
     fn apply_map(&self, value: &F) {
         if self.reactive_frame.get() != current_reactive_frame() {
-            self.cached.replace(Some((self.map)(value)));
+            self.cached
+                .replace(Some(StateAccessor::new((self.map)(value))));
             self.reactive_frame.set(current_reactive_frame());
         }
     }
 
-    fn subscribe<W: Fn(&M) + 'static>(self: Rc<Self>, callback: W) -> Option<Subscription> {
+    fn subscribe<W: Fn(&StateAccessor<M>) + 'static>(
+        self: Rc<Self>,
+        callback: W,
+    ) -> Option<Subscription> {
         let cloned = self.clone();
         self.state.subscribe(move |value| {
-            cloned.apply_map(value);
+            value.with(|it| cloned.apply_map(it));
             callback(cloned.cached.borrow().as_ref().unwrap());
         })
     }
 
     fn with<W: FnOnce(&M) -> D, D>(self: Rc<Self>, callback: W) -> Option<D> {
-        self.cached.borrow().as_ref().map(|it| callback(it))
+        self.cached.borrow().as_ref().map(|it| it.with(callback))
     }
 }
 
@@ -249,7 +268,7 @@ where
     S: State<F>,
     C: Fn(&F) -> M + Clone + 'static,
 {
-    fn subscribe<W: Fn(&M) + 'static>(&self, callback: W) -> Option<Subscription> {
+    fn subscribe<W: Fn(&StateAccessor<M>) + 'static>(&self, callback: W) -> Option<Subscription> {
         self.inner.clone().subscribe(callback)
     }
 

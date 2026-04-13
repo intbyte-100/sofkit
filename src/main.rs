@@ -31,7 +31,7 @@ fn build_ui() -> impl IsA<gtk::Widget> {
                 .margin_top(10)
                 .reactive()
                 .label_state(&text_state)
-                .with_state(&counter, |it, value| it.set_vexpand(value % 2 == 0))
+                .with_state(&counter, |it, value| it.set_vexpand(value.get() % 2 == 0))
                 .on_click(move || {
                     counter.edit(|it| *it += 1);
                 }),

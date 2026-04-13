@@ -4,7 +4,7 @@ use gtk::glib::object::ObjectExt;
 use gtk::prelude::{ButtonExt, WidgetExt};
 use gtk::{Button, builders::ButtonBuilder};
 
-use crate::state::State;
+use crate::state::{State, StateAccessor};
 
 pub struct ReactiveButtonBuilder {
     on_click: Option<Box<dyn Fn()>>,
@@ -36,7 +36,7 @@ impl ReactiveButtonBuilder {
 
     pub fn label_state<T: Display + 'static, D: State<T> + 'static>(self, string: &D) -> Self {
         self.with_state(string, |button, it| {
-            button.set_label(it.to_string().as_str())
+            button.set_label(it.with(|it| it.to_string()).as_str())
         })
     }
     
@@ -45,7 +45,7 @@ impl ReactiveButtonBuilder {
             for i in button.css_classes() {
                 button.remove_css_class(i.as_str());
             }
-            button.add_css_class(it.to_string().as_str())
+            button.add_css_class(it.with(|it| it.to_string()).as_str())
         })
     }
 
@@ -55,16 +55,16 @@ impl ReactiveButtonBuilder {
         callback: S,
     ) -> Self {
         self.with_state(state, move |button, it| {
-            callback(&button, it.clone());
+            callback(&button, it.get());
         })
     }
     
-    pub fn with_state<T: 'static, S: Fn(Button, &T) + 'static + Clone, D: State<T> + 'static>(
+    pub fn with_state<T: 'static, S: Fn(Button, &StateAccessor<T>) + 'static + Clone, D: State<T> + 'static>(
         mut self,
         state: &D,
         callback: S,
     ) -> Self {
-        
+         
         let state = state.clone();
         
         self.subscribes.push(Box::new(move |button| {

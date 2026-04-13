@@ -6,7 +6,7 @@ use gtk::{
     builders::{CheckButtonBuilder, EntryBuilder, LabelBuilder},
 };
 
-use crate::state::{State, StateHandle};
+use crate::state::{State, StateAccessor, StateHandle};
 
 pub struct ReactiveLabelBuilder {
     subscribes: Vec<Box<dyn Fn(&Label)>>,
@@ -30,10 +30,10 @@ impl ReactiveLabelBuilder {
     }
 
     pub fn text_state<T: Display + 'static, D: State<T> + 'static>(self, state: &D) -> Self {
-        self.bind_state(state, |label, it| label.set_label(it.to_string().as_str()))
+        self.bind_state(state, |label, it| label.set_label(it.with(|it| it.to_string()).as_str()))
     }
 
-    pub fn bind_state<T: 'static, S: Fn(Label, &T) + 'static + Clone, D: State<T> + 'static>(
+    pub fn bind_state<T: 'static, S: Fn(Label, &StateAccessor<T>) + 'static + Clone, D: State<T> + 'static>(
         mut self,
         state: &D,
         callback: S,
@@ -87,13 +87,13 @@ impl ReactiveEntryBuilder {
 
     pub fn text_state<T: State<String> + 'static>(self, state: &T) -> Self {
         self.bind_state(state, |entry, it| {
-            if it.as_str() != entry.text().as_str() {
-                entry.set_text(it.as_str())
+            if it.with(|it| it.as_str() != entry.text().as_str()) {
+                entry.set_text(it.get().as_str())
             }
         })
     }
 
-    pub fn bind_state<T: 'static, S: Fn(Entry, &T) + 'static + Clone, D: State<T> + 'static>(
+    pub fn bind_state<T: 'static, S: Fn(Entry, &StateAccessor<T>) + 'static + Clone, D: State<T> + 'static>(
         mut self,
         state: &D,
         callback: S,
@@ -133,16 +133,11 @@ impl ReactiveEntryBuilder {
         if let Some(state) = self.two_way_state.take() {
             entry.connect_changed(move |e| {
                 let text = e.text();
-                if let Some(borrowed) = state.get() {
-                    let update = if let Ok(borrowed) = borrowed.try_borrow() {
-                        borrowed.as_str() != text.as_str()
-                    } else {
-                        false
-                    };
-
-                    if update {
-                        state.set(text.to_string());
-                    }
+                
+                let update = state.with(|it| it.as_str() != text.as_str()).unwrap_or(false);
+                
+                if update {
+                    state.set(text.to_string());
                 }
             });
         } else if !callbacks.is_empty() {
@@ -188,12 +183,12 @@ impl ReactiveCheckButtonBuilder {
     }
 
     pub fn active_state<T: State<bool> + 'static>(self, state: &T) -> Self {
-        self.bind_state(state, |cb, it| cb.set_active(*it))
+        self.bind_state(state, |cb, it| cb.set_active(it.get()))
     }
 
     pub fn bind_state<
         T: 'static,
-        S: Fn(CheckButton, &T) + 'static + Clone,
+        S: Fn(CheckButton, &StateAccessor<T>) + 'static + Clone,
         D: State<T> + 'static,
     >(
         mut self,
@@ -218,7 +213,7 @@ impl ReactiveCheckButtonBuilder {
 
         self.two_way_state = Some(state);
         self.bind_state(&state_for_sub, |cb, it| {
-            cb.set_active(*it);
+            cb.set_active(it.get());
         })
     }
 
