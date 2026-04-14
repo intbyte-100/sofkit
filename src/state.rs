@@ -1,7 +1,6 @@
 use crate::prelude::state_ext::StateHolderExt;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
-use std::ops::Deref;
 use std::rc::Rc;
 use std::{any::Any, rc::Weak};
 
@@ -10,7 +9,7 @@ use gtk::glib::object::IsA;
 use gtk::glib::subclass::types::ObjectSubclassIsExt;
 use gtk::glib::{self, Object};
 
-use crate::reactive_frame::current_reactive_frame;
+use crate::batching::BatchGate;
 
 pub trait State<T: 'static>: Clone {
     fn subscribe<W: Fn(&StateAccessor<T>) + 'static>(&self, callback: W) -> Option<Subscription>;
@@ -77,7 +76,7 @@ impl<T> StateAccessor<T> {
 }
 
 pub struct StateCell<T> {
-    scheduled_frame: Cell<u64>,
+    frame_gate: BatchGate,
     state: StateAccessor<T>,
     subscribers: RefCell<HashMap<i32, Box<dyn Fn(&StateAccessor<T>)>>>,
 }
@@ -85,19 +84,14 @@ pub struct StateCell<T> {
 impl<T> StateCell<T> {
     fn new(state: T) -> Self {
         Self {
-            scheduled_frame: Cell::new(0),
+            frame_gate: BatchGate::new(),
             state: StateAccessor::new(state),
             subscribers: RefCell::default(),
         }
     }
 
     fn needs_subscription_update(&self) -> bool {
-        if self.scheduled_frame.get() != current_reactive_frame() {
-            self.scheduled_frame.set(current_reactive_frame());
-            true
-        } else {
-            false
-        }
+        self.frame_gate.should_run()
     }
 }
 
@@ -197,7 +191,7 @@ where
 {
     state: S,
     cached: RefCell<Option<StateAccessor<M>>>,
-    reactive_frame: Cell<u64>,
+    gate: BatchGate,
     map: C,
     _marker: std::marker::PhantomData<(F, M)>,
 }
@@ -211,7 +205,7 @@ where
         Self {
             cached: state.with(map.clone()).map(StateAccessor::new).into(),
             state,
-            reactive_frame: Default::default(),
+            gate: BatchGate::new(),
             map,
             _marker: std::marker::PhantomData,
         }
@@ -219,10 +213,9 @@ where
     }
 
     fn apply_map(&self, value: &F) {
-        if self.reactive_frame.get() != current_reactive_frame() {
+        if self.gate.should_run() {
             self.cached
                 .replace(Some(StateAccessor::new((self.map)(value))));
-            self.reactive_frame.set(current_reactive_frame());
         }
     }
 

@@ -1,7 +1,7 @@
 mod prelude;
 mod state;
 
-mod reactive_frame;
+mod batching;
 
 use crate::prelude::*;
 use crate::state::State;

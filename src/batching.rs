@@ -20,7 +20,7 @@ thread_local! {
     static REACTIVE_FRAME: ReactiveFrame = ReactiveFrame::new();
 }
 
-pub(crate) fn current_reactive_frame() -> u64 {
+fn current_reactive_frame() -> u64 {
     REACTIVE_FRAME.with(|it| {
         if !it.is_updated.get() {
             it.frame.set(it.frame.get() + 1);
@@ -35,4 +35,29 @@ pub(crate) fn current_reactive_frame() -> u64 {
 
         it.frame.get()
     })
+}
+
+pub struct BatchGate {
+    last_frame: Cell<u64>,
+}
+
+impl BatchGate {
+    pub fn new() -> Self {
+        Self {
+            last_frame: Cell::new(0),
+        }
+    }
+
+    #[inline]
+    pub fn should_run(&self) -> bool {
+        let current = current_reactive_frame();
+        let last = self.last_frame.get();
+
+        if current != last {
+            self.last_frame.set(current);
+            true
+        } else {
+            false
+        }
+    }
 }
