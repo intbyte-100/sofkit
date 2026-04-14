@@ -1,6 +1,7 @@
 use crate::prelude::state_ext::StateHolderExt;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
+use std::panic::Location;
 use std::rc::Rc;
 use std::{any::Any, rc::Weak};
 
@@ -10,6 +11,8 @@ use gtk::glib::subclass::types::ObjectSubclassIsExt;
 use gtk::glib::{self, Object};
 
 use crate::batching::BatchGate;
+
+const MAX_ITERATIONS: i32 = 100;
 
 pub trait State<T: 'static>: Clone {
     fn subscribe<W: Fn(&StateAccessor<T>) + 'static>(&self, callback: W) -> Option<Subscription>;
@@ -75,23 +78,92 @@ impl<T> StateAccessor<T> {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum UpdateOutcome {
+    Unchanged,
+    Updated,
+    RecursiveLimitReached,
+}
+
 pub struct StateCell<T> {
+    last_edit_location: Cell<Option<&'static Location<'static>>>,
+    is_edited: Cell<UpdateOutcome>,
     frame_gate: BatchGate,
     state: StateAccessor<T>,
     subscribers: RefCell<HashMap<i32, Box<dyn Fn(&StateAccessor<T>)>>>,
 }
 
-impl<T> StateCell<T> {
+impl<T: 'static> StateCell<T> {
     fn new(state: T) -> Self {
         Self {
+            last_edit_location: Cell::new(None),
+            is_edited: Cell::new(UpdateOutcome::Unchanged),
             frame_gate: BatchGate::new(),
             state: StateAccessor::new(state),
             subscribers: RefCell::default(),
         }
     }
 
-    fn needs_subscription_update(&self) -> bool {
-        self.frame_gate.should_run()
+    fn notify_subscribers(self: Rc<Self>) {
+        let mut subscribers = std::mem::take::<HashMap<_, _>>(&mut self.subscribers.borrow_mut());
+
+        let mut update_cycles = 0;
+
+        loop {
+            for subscriber in subscribers.values() {
+                subscriber(&self.state);
+
+                if self.is_edited.get() == UpdateOutcome::Updated {
+                    break;
+                }
+            }
+
+            if self.is_edited.get() == UpdateOutcome::Unchanged {
+                break;
+            }
+
+            update_cycles += 1;
+
+            if update_cycles > MAX_ITERATIONS {
+                let msg = format!(
+                    "reactive system did not stabilize within {} iterations (possible cycle).\n\
+                         last edit at: {}",
+                    MAX_ITERATIONS,
+                    self.last_edit_location
+                        .get()
+                        .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
+                        .unwrap_or_else(|| "<unknown>".into()),
+                );
+
+                #[cfg(debug_assertions)]
+                panic!("{msg}");
+
+                #[cfg(not(debug_assertions))]
+                {
+                    eprintln!("{msg}"); 
+                    self.is_edited.set(UpdateOutcome::Unchanged);
+                    break; 
+                }
+            }
+
+            self.is_edited.set(UpdateOutcome::Unchanged);
+        }
+
+        let mut_ref = &mut self.subscribers.borrow_mut();
+
+        std::mem::swap(&mut subscribers, mut_ref);
+
+        mut_ref.extend(subscribers);
+
+        self.is_edited.set(UpdateOutcome::Unchanged);
+    }
+
+    fn notify_subscribers_if_needed(self: Rc<Self>) {
+        if self.frame_gate.should_run() {
+            glib::idle_add_local_once(move || {
+                self.notify_subscribers();
+            });
+        }
     }
 }
 
@@ -129,42 +201,29 @@ impl<T: 'static + Clone> StateHandle<T> {
         })
     }
 
+    #[track_caller]
     fn edit<W: FnOnce(&mut T) + 'static>(&self, callback: W) -> Option<()> {
-        let result = {
-            self.inner.upgrade().map(|it| {
-                it.state.with_mut(callback);
+        if let Some(it) = self.inner.upgrade() {
+            it.last_edit_location
+                .set(Some(std::panic::Location::caller()));
 
-                if it.needs_subscription_update() {
-                    glib::idle_add_local_once(move || {
-                        let mut subscribers =
-                            std::mem::take::<HashMap<_, _>>(&mut it.subscribers.borrow_mut());
-
-                        for subscriber in subscribers.values() {
-                            subscriber(&it.state);
-                        }
-
-                        let mut_ref = &mut it.subscribers.borrow_mut();
-
-                        std::mem::swap(&mut subscribers, mut_ref);
-
-                        mut_ref.extend(subscribers);
-                    });
-                }
-                ()
-            })
-        };
-
-        if cfg!(debug_assertions) && result.is_none() {
-            eprintln!("Warning: State used without attach_state_holder()");
+            it.state.with_mut(callback);
+            it.is_edited.set(UpdateOutcome::Updated);
+            it.notify_subscribers_if_needed();
+            Some(())
+        } else {
+            if cfg!(debug_assertions) {
+                eprintln!("Warning: State used without attach_state_holder()");
+            }
+            None
         }
-
-        result
     }
 
     pub fn get(&self) -> Option<Rc<StateCell<T>>> {
         self.inner.upgrade()
     }
 
+    #[track_caller]
     pub fn set(&self, value: T) -> Option<()> {
         self.edit(move |it| *it = value)
     }
