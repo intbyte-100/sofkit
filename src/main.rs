@@ -2,6 +2,7 @@ mod prelude;
 mod state;
 
 mod batching;
+mod scheduler;
 
 use crate::prelude::*;
 use crate::state::State;
