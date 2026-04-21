@@ -10,7 +10,7 @@ impl BoxWrapper {
         }
         self
     }
-    
+
     pub fn build(self) -> gtk::Box {
         self.0
     }

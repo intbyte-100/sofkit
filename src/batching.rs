@@ -2,8 +2,6 @@ use std::cell::Cell;
 
 use crate::scheduler::Scheduler;
 
-
-
 pub struct BatchGate {
     last_notify_pass: Cell<u64>,
 }
@@ -18,7 +16,7 @@ impl BatchGate {
     #[inline]
     pub fn should_run(&self) -> bool {
         let current = Scheduler::get().notify_pass();
-        
+
         let last = self.last_notify_pass.get();
 
         if current != last {

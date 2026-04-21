@@ -39,7 +39,7 @@ impl ReactiveButtonBuilder {
             button.set_label(it.with(|it| it.to_string()).as_str())
         })
     }
-    
+
     pub fn css_class_state<T: Display + 'static, D: State<T> + 'static>(self, string: &D) -> Self {
         self.with_state(string, |button, it| {
             for i in button.css_classes() {
@@ -49,7 +49,11 @@ impl ReactiveButtonBuilder {
         })
     }
 
-    pub fn bind_state<T: Clone + 'static, S: Fn(&Button, T) + 'static + Clone, D: State<T> + 'static>(
+    pub fn bind_state<
+        T: Clone + 'static,
+        S: Fn(&Button, T) + 'static + Clone,
+        D: State<T> + 'static,
+    >(
         self,
         state: &D,
         callback: S,
@@ -58,26 +62,29 @@ impl ReactiveButtonBuilder {
             callback(&button, it.get());
         })
     }
-    
-    pub fn with_state<T: 'static, S: Fn(Button, &StateAccessor<T>) + 'static + Clone, D: State<T> + 'static>(
+
+    pub fn with_state<
+        T: 'static,
+        S: Fn(Button, &StateAccessor<T>) + 'static + Clone,
+        D: State<T> + 'static,
+    >(
         mut self,
         state: &D,
         callback: S,
     ) -> Self {
-         
         let state = state.clone();
-        
+
         self.subscribes.push(Box::new(move |button| {
             let callback = callback.clone();
-            
+
             let button_weak = button.downgrade();
-            
+
             state.subscribe_widget(button, move |it| {
                 if let Some(button_ref) = button_weak.upgrade() {
                     callback(button_ref, it);
                 }
             });
-        }));   
+        }));
 
         self
     }
@@ -88,7 +95,7 @@ impl ReactiveButtonBuilder {
         if let Some(on_click) = self.on_click {
             button.connect_clicked(move |_| on_click());
         }
-        
+
         for subscribe in self.subscribes {
             subscribe(&button);
         }

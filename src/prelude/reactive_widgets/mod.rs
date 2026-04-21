@@ -30,10 +30,16 @@ impl ReactiveLabelBuilder {
     }
 
     pub fn text_state<T: Display + 'static, D: State<T> + 'static>(self, state: &D) -> Self {
-        self.bind_state(state, |label, it| label.set_label(it.with(|it| it.to_string()).as_str()))
+        self.bind_state(state, |label, it| {
+            label.set_label(it.with(|it| it.to_string()).as_str())
+        })
     }
 
-    pub fn bind_state<T: 'static, S: Fn(Label, &StateAccessor<T>) + 'static + Clone, D: State<T> + 'static>(
+    pub fn bind_state<
+        T: 'static,
+        S: Fn(Label, &StateAccessor<T>) + 'static + Clone,
+        D: State<T> + 'static,
+    >(
         mut self,
         state: &D,
         callback: S,
@@ -93,7 +99,11 @@ impl ReactiveEntryBuilder {
         })
     }
 
-    pub fn bind_state<T: 'static, S: Fn(Entry, &StateAccessor<T>) + 'static + Clone, D: State<T> + 'static>(
+    pub fn bind_state<
+        T: 'static,
+        S: Fn(Entry, &StateAccessor<T>) + 'static + Clone,
+        D: State<T> + 'static,
+    >(
         mut self,
         state: &D,
         callback: S,
@@ -133,9 +143,11 @@ impl ReactiveEntryBuilder {
         if let Some(state) = self.two_way_state.take() {
             entry.connect_changed(move |e| {
                 let text = e.text();
-                
-                let update = state.with(|it| it.as_str() != text.as_str()).unwrap_or(false);
-                
+
+                let update = state
+                    .with(|it| it.as_str() != text.as_str())
+                    .unwrap_or(false);
+
                 if update {
                     state.set(text.to_string());
                 }

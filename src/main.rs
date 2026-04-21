@@ -16,7 +16,6 @@ fn build_ui() -> impl IsA<gtk::Widget> {
             label().reactive().text_state(&counter),
             entry().reactive().bind_state_two_way(text_state.clone()),
             entry().reactive().bind_state_two_way(text_state.clone()),
-            
             hbox![].append_all((0..10).map(|i| {
                 check_button()
                     .margin_end(10)
