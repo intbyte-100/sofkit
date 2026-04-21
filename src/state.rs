@@ -1,4 +1,5 @@
 use crate::prelude::state_ext::StateHolderExt;
+use crate::scheduler::Scheduler;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::panic::Location;
@@ -78,16 +79,7 @@ impl<T> StateAccessor<T> {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum UpdateOutcome {
-    Unchanged,
-    Updated,
-    RecursiveLimitReached,
-}
-
 pub struct StateCell<T> {
-    last_edit_location: Cell<Option<&'static Location<'static>>>,
-    is_edited: Cell<UpdateOutcome>,
     frame_gate: BatchGate,
     state: StateAccessor<T>,
     subscribers: RefCell<HashMap<i32, Box<dyn Fn(&StateAccessor<T>)>>>,
@@ -96,72 +88,28 @@ pub struct StateCell<T> {
 impl<T: 'static> StateCell<T> {
     fn new(state: T) -> Self {
         Self {
-            last_edit_location: Cell::new(None),
-            is_edited: Cell::new(UpdateOutcome::Unchanged),
             frame_gate: BatchGate::new(),
             state: StateAccessor::new(state),
             subscribers: RefCell::default(),
         }
     }
 
-    fn notify_subscribers(self: Rc<Self>) {
-        let mut subscribers = std::mem::take::<HashMap<_, _>>(&mut self.subscribers.borrow_mut());
-
-        let mut update_cycles = 0;
-
-        loop {
-            for subscriber in subscribers.values() {
-                subscriber(&self.state);
-
-                if self.is_edited.get() == UpdateOutcome::Updated {
-                    break;
-                }
-            }
-
-            if self.is_edited.get() == UpdateOutcome::Unchanged {
-                break;
-            }
-
-            update_cycles += 1;
-
-            if update_cycles > MAX_ITERATIONS {
-                let msg = format!(
-                    "reactive system did not stabilize within {} iterations (possible cycle).\n\
-                         last edit at: {}",
-                    MAX_ITERATIONS,
-                    self.last_edit_location
-                        .get()
-                        .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
-                        .unwrap_or_else(|| "<unknown>".into()),
-                );
-
-                #[cfg(debug_assertions)]
-                panic!("{msg}");
-
-                #[cfg(not(debug_assertions))]
-                {
-                    eprintln!("{msg}"); 
-                    self.is_edited.set(UpdateOutcome::Unchanged);
-                    break; 
-                }
-            }
-
-            self.is_edited.set(UpdateOutcome::Unchanged);
-        }
-
-        let mut_ref = &mut self.subscribers.borrow_mut();
-
-        std::mem::swap(&mut subscribers, mut_ref);
-
-        mut_ref.extend(subscribers);
-
-        self.is_edited.set(UpdateOutcome::Unchanged);
-    }
-
+    #[track_caller]
     fn notify_subscribers_if_needed(self: Rc<Self>) {
         if self.frame_gate.should_run() {
-            glib::idle_add_local_once(move || {
-                self.notify_subscribers();
+            Scheduler::get().schedule(move || {
+                let mut subscribers =
+                    std::mem::take::<HashMap<_, _>>(&mut self.subscribers.borrow_mut());
+
+                for subscriber in subscribers.values() {
+                    subscriber(&self.state);
+                }
+
+                let mut_ref = &mut self.subscribers.borrow_mut();
+
+                std::mem::swap(&mut subscribers, mut_ref);
+
+                mut_ref.extend(subscribers);
             });
         }
     }
@@ -204,11 +152,7 @@ impl<T: 'static + Clone> StateHandle<T> {
     #[track_caller]
     fn edit<W: FnOnce(&mut T) + 'static>(&self, callback: W) -> Option<()> {
         if let Some(it) = self.inner.upgrade() {
-            it.last_edit_location
-                .set(Some(std::panic::Location::caller()));
-
             it.state.with_mut(callback);
-            it.is_edited.set(UpdateOutcome::Updated);
             it.notify_subscribers_if_needed();
             Some(())
         } else {
