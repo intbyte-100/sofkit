@@ -190,13 +190,13 @@ impl TracerTree {
 
                     TracerTreeNode {
                         task: it,
-                        parent: parent,
-                        level: level,
+                        parent,
+                        level,
                     }
                 })
                 .collect();
 
-            self.nodes.extend(nodes.into_iter());
+            self.nodes.extend(nodes);
         } else {
             let mut node_id = self.nodes.len();
 
