@@ -12,7 +12,6 @@ use gtk::glib::{self, Object};
 
 use crate::batching::BatchGate;
 
-const MAX_ITERATIONS: i32 = 100;
 
 pub trait State<T: 'static>: Clone {
     fn subscribe<W: Fn(&StateAccessor<T>) + 'static>(&self, callback: W) -> Option<Subscription>;
@@ -81,7 +80,7 @@ impl<T> StateAccessor<T> {
 pub struct StateCell<T> {
     frame_gate: BatchGate,
     state: StateAccessor<T>,
-    subscribers: RefCell<HashMap<i32, Box<dyn Fn(&StateAccessor<T>)>>>,
+    subscribers: RefCell<HashMap<usize, Box<dyn Fn(&StateAccessor<T>)>>>,
 }
 
 impl<T: 'static> StateCell<T> {
@@ -115,10 +114,10 @@ impl<T: 'static> StateCell<T> {
 }
 
 thread_local! {
-    static SUBSCRIPTION_ID: Cell<u32> = Cell::default();
+    static SUBSCRIPTION_ID: Cell<usize> = Cell::default();
 }
 
-fn new_subscription_id() -> u32 {
+fn new_subscription_id() -> usize {
     SUBSCRIPTION_ID.with(|it| {
         let id = it.get();
         it.set(id + 1);
@@ -137,7 +136,7 @@ impl<T: 'static + Clone> StateHandle<T> {
         self.inner.upgrade().map(|it| {
             callback(&it.state);
 
-            let id = new_subscription_id() as i32;
+            let id = new_subscription_id();
             it.subscribers.borrow_mut().insert(id, Box::new(callback));
 
             Subscription::new(Box::new(move || {
