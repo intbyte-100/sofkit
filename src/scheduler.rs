@@ -14,6 +14,8 @@ pub struct Scheduler {
     notify_pass: Cell<u64>,
     frame: Cell<u64>,
     task_queue: RefCell<Vec<Task>>,
+    reactive_frame: Cell<u64>,
+    reactive_is_updated: Cell<bool>,
 }
 
 struct Task {
@@ -43,6 +45,8 @@ impl Scheduler {
             notify_pass: Cell::new(1),
             frame: Cell::new(0),
             task_queue: RefCell::new(Vec::new()),
+            reactive_frame: Cell::new(0),
+            reactive_is_updated: Cell::new(false),
         }
     }
 
@@ -58,7 +62,7 @@ impl Scheduler {
                 break;
             }
 
-            self.notify_pass.set(self.notify_pass.get() + 1);
+            self.increment_notify_pass();
             local_notify_pass += 1;
 
             if local_notify_pass == 25 {
@@ -88,7 +92,7 @@ impl Scheduler {
         let mut local_notify_pass = 0;
 
         loop {
-            self.notify_pass.set(self.notify_pass.get() + 1);
+            self.increment_notify_pass();
             local_notify_pass += 1;
 
             for mut task in tasks {
@@ -107,6 +111,19 @@ impl Scheduler {
             }
         }
     }
+    
+    fn increment_notify_pass(&self) {
+        self.notify_pass.set(self.notify_pass.get() + 1);
+    }
+
+    fn current_reactive_frame(self: &Rc<Self>) -> u64 {
+        if !self.reactive_is_updated.get() {
+            self.reactive_frame.set(self.reactive_frame.get() + 1);
+            self.reactive_is_updated.set(true);
+        }
+
+        self.reactive_frame.get()
+    }
 
     #[track_caller]
     pub fn schedule(self: Rc<Self>, func: impl FnOnce() + 'static) {
@@ -114,12 +131,13 @@ impl Scheduler {
             .borrow_mut()
             .push(Task::new(std::panic::Location::caller(), Box::new(func)));
 
-        let current_frame = current_reactive_frame();
+        let current_frame = self.current_reactive_frame();
 
         if self.frame.get() < current_frame {
             self.frame.set(current_frame);
 
             glib::idle_add_local_once(move || {
+                self.reactive_is_updated.set(false);
                 self.run_tasks();
             });
         }
@@ -132,41 +150,6 @@ impl Scheduler {
     pub fn notify_pass(&self) -> u64 {
         self.notify_pass.get()
     }
-}
-
-struct ReactiveFrame {
-    frame: Cell<u64>,
-    is_updated: Cell<bool>,
-}
-
-impl ReactiveFrame {
-    fn new() -> Self {
-        Self {
-            frame: Cell::new(0),
-            is_updated: Cell::new(false),
-        }
-    }
-}
-
-thread_local! {
-    static REACTIVE_FRAME: ReactiveFrame = ReactiveFrame::new();
-}
-
-pub(crate) fn current_reactive_frame() -> u64 {
-    REACTIVE_FRAME.with(|it| {
-        if !it.is_updated.get() {
-            it.frame.set(it.frame.get() + 1);
-            it.is_updated.set(true);
-
-            glib::idle_add_local_once(move || {
-                REACTIVE_FRAME.with(|it| {
-                    it.is_updated.set(false);
-                });
-            });
-        }
-
-        it.frame.get()
-    })
 }
 
 #[derive(Default)]
