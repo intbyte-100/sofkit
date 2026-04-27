@@ -178,7 +178,7 @@ impl<T: 'static + Clone> ReadState<T> for StateHandle<T> {
     fn subscribe<W: Fn(&StateAccessor<T>) + 'static>(&self, callback: W) -> Option<Subscription> {
         StateHandle::subscribe(self, callback)
     }
-    
+
     fn with<W: FnOnce(&T) -> D, D>(&self, callback: W) -> Option<D> {
         self.inner.upgrade().map(|cell| cell.state.with(callback))
     }
@@ -187,7 +187,7 @@ impl<T: 'static + Clone> ReadState<T> for StateHandle<T> {
 impl<T: 'static + Clone> WriteState<T> for StateHandle<T> {
     fn edit<W: FnOnce(&mut T) + 'static>(&self, callback: W) -> Option<()> {
         StateHandle::edit(self, callback)
-    }    
+    }
 }
 
 impl<T: 'static + Clone> State<T> for StateHandle<T> {}

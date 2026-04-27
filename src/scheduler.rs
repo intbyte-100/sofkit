@@ -111,7 +111,7 @@ impl Scheduler {
             }
         }
     }
-    
+
     fn increment_notify_pass(&self) {
         self.notify_pass.set(self.notify_pass.get() + 1);
     }

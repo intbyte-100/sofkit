@@ -1,5 +1,5 @@
-use crate::state::WriteState;
 use crate::state::ReadState;
+use crate::state::WriteState;
 
 mod prelude;
 mod state;
