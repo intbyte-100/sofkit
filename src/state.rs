@@ -12,8 +12,7 @@ use gtk::glib::{self, Object};
 
 use crate::batching::BatchGate;
 
-
-pub trait State<T: 'static>: Clone {
+pub trait ReadState<T: 'static>: Clone {
     fn subscribe<W: Fn(&StateAccessor<T>) + 'static>(&self, callback: W) -> Option<Subscription>;
 
     #[inline]
@@ -27,12 +26,6 @@ pub trait State<T: 'static>: Clone {
     }
 
     fn with<W: FnOnce(&T) -> D, D>(&self, callback: W) -> Option<D>;
-
-    fn edit<W: FnOnce(&mut T) + 'static>(&self, callback: W) -> Option<()>;
-
-    fn update(&self, value: T) -> Option<()> {
-        self.edit(move |it| *it = value)
-    }
 
     fn get(&self) -> Option<T>
     where
@@ -49,6 +42,16 @@ pub trait State<T: 'static>: Clone {
         MappedState::new(self.clone(), map)
     }
 }
+
+pub trait WriteState<T: 'static>: Clone {
+    fn edit<W: FnOnce(&mut T) + 'static>(&self, callback: W) -> Option<()>;
+
+    fn update(&self, value: T) -> Option<()> {
+        self.edit(move |it| *it = value)
+    }
+}
+
+pub trait State<T: 'static>: ReadState<T> + WriteState<T> {}
 
 pub struct StateAccessor<T> {
     value: RefCell<T>,
@@ -171,23 +174,27 @@ impl<T: 'static + Clone> StateHandle<T> {
     }
 }
 
-impl<T: 'static + Clone> State<T> for StateHandle<T> {
+impl<T: 'static + Clone> ReadState<T> for StateHandle<T> {
     fn subscribe<W: Fn(&StateAccessor<T>) + 'static>(&self, callback: W) -> Option<Subscription> {
         StateHandle::subscribe(self, callback)
     }
-
-    fn edit<W: FnOnce(&mut T) + 'static>(&self, callback: W) -> Option<()> {
-        StateHandle::edit(self, callback)
-    }
-
+    
     fn with<W: FnOnce(&T) -> D, D>(&self, callback: W) -> Option<D> {
         self.inner.upgrade().map(|cell| cell.state.with(callback))
     }
 }
 
+impl<T: 'static + Clone> WriteState<T> for StateHandle<T> {
+    fn edit<W: FnOnce(&mut T) + 'static>(&self, callback: W) -> Option<()> {
+        StateHandle::edit(self, callback)
+    }    
+}
+
+impl<T: 'static + Clone> State<T> for StateHandle<T> {}
+
 struct InnerMappedState<S, F: 'static, M: 'static, C>
 where
-    S: State<F> + 'static,
+    S: ReadState<F> + 'static,
     C: Fn(&F) -> M + Clone + 'static,
 {
     state: S,
@@ -199,7 +206,7 @@ where
 
 impl<S, F: 'static, M: 'static, C> InnerMappedState<S, F, M, C>
 where
-    S: State<F>,
+    S: ReadState<F>,
     C: Fn(&F) -> M + Clone + 'static,
 {
     fn new(state: S, map: C) -> Rc<Self> {
@@ -239,7 +246,7 @@ where
 #[derive(Clone)]
 pub struct MappedState<S, F: 'static, M: 'static, C>
 where
-    S: State<F> + 'static,
+    S: ReadState<F> + 'static,
     C: Fn(&F) -> M + Clone + 'static,
 {
     inner: Rc<InnerMappedState<S, F, M, C>>,
@@ -247,7 +254,7 @@ where
 
 impl<S, F: 'static, M: 'static, C> MappedState<S, F, M, C>
 where
-    S: State<F>,
+    S: ReadState<F>,
     C: Fn(&F) -> M + Clone + 'static,
 {
     pub fn new(state: S, map: C) -> Self {
@@ -257,17 +264,13 @@ where
     }
 }
 
-impl<S, F: 'static + Clone, M: 'static + Clone, C> State<M> for MappedState<S, F, M, C>
+impl<S, F: 'static + Clone, M: 'static + Clone, C> ReadState<M> for MappedState<S, F, M, C>
 where
     S: State<F>,
     C: Fn(&F) -> M + Clone + 'static,
 {
     fn subscribe<W: Fn(&StateAccessor<M>) + 'static>(&self, callback: W) -> Option<Subscription> {
         self.inner.clone().subscribe(callback)
-    }
-
-    fn edit<W: FnOnce(&mut M) + 'static>(&self, _callback: W) -> Option<()> {
-        None
     }
 
     fn with<W: FnOnce(&M) -> D, D>(&self, callback: W) -> Option<D> {

@@ -1,3 +1,4 @@
+use crate::state::WriteState;
 use std::fmt::Display;
 
 use gtk::prelude::*;
@@ -6,7 +7,7 @@ use gtk::{
     builders::{CheckButtonBuilder, EntryBuilder, LabelBuilder},
 };
 
-use crate::state::{State, StateAccessor, StateHandle};
+use crate::state::{ReadState, State, StateAccessor, StateHandle};
 
 pub struct ReactiveLabelBuilder {
     subscribes: Vec<Box<dyn Fn(&Label)>>,
@@ -91,7 +92,7 @@ impl ReactiveEntryBuilder {
         self
     }
 
-    pub fn text_state<T: State<String> + 'static>(self, state: &T) -> Self {
+    pub fn text_state<T: ReadState<String> + 'static>(self, state: &T) -> Self {
         self.bind_state(state, |entry, it| {
             if it.with(|it| it.as_str() != entry.text().as_str()) {
                 entry.set_text(it.get().as_str())
@@ -102,7 +103,7 @@ impl ReactiveEntryBuilder {
     pub fn bind_state<
         T: 'static,
         S: Fn(Entry, &StateAccessor<T>) + 'static + Clone,
-        D: State<T> + 'static,
+        D: ReadState<T> + 'static,
     >(
         mut self,
         state: &D,
@@ -194,14 +195,14 @@ impl ReactiveCheckButtonBuilder {
         self
     }
 
-    pub fn active_state<T: State<bool> + 'static>(self, state: &T) -> Self {
+    pub fn active_state<T: ReadState<bool> + 'static>(self, state: &T) -> Self {
         self.bind_state(state, |cb, it| cb.set_active(it.get()))
     }
 
     pub fn bind_state<
         T: 'static,
         S: Fn(CheckButton, &StateAccessor<T>) + 'static + Clone,
-        D: State<T> + 'static,
+        D: ReadState<T> + 'static,
     >(
         mut self,
         state: &D,
