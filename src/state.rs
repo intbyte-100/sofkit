@@ -44,10 +44,32 @@ pub trait ReadState<T: 'static>: Clone {
 }
 
 pub trait WriteState<T: 'static>: Clone {
-    fn edit<W: FnOnce(&mut T) + 'static>(&self, callback: W) -> Option<()>;
+    fn try_edit<W: FnOnce(&mut T) + 'static>(&self, callback: W) -> Option<()>;
 
-    fn update(&self, value: T) -> Option<()> {
-        self.edit(move |it| *it = value)
+    fn try_replace(&self, value: T) -> Option<()> {
+        self.try_edit(move |it| *it = value)
+    }
+    
+    #[track_caller]
+    fn edit<W: FnOnce(&mut T) + 'static>(&self, callback: W) {
+        if self.try_edit(callback).is_none() {
+            if cfg!(debug_assertions) {
+                panic!("Error: State used after it was destroyed (forgot to attach_state_holder()?)");
+            } else {
+                eprintln!("Error: State used after it was destroyed (forgot to attach_state_holder()?)");
+            }
+        }
+    }
+
+    #[track_caller]
+    fn replace(&self, value: T) {
+        if self.try_replace(value).is_none() {
+            if cfg!(debug_assertions) {
+                panic!("Error: State used after it was destroyed (forgot to attach_state_holder()?)");
+            } else {
+                eprintln!("Error: State used after it was destroyed (forgot to attach_state_holder()?)");
+            }
+        }
     }
 }
 
@@ -185,7 +207,7 @@ impl<T: 'static + Clone> ReadState<T> for StateHandle<T> {
 }
 
 impl<T: 'static + Clone> WriteState<T> for StateHandle<T> {
-    fn edit<W: FnOnce(&mut T) + 'static>(&self, callback: W) -> Option<()> {
+    fn try_edit<W: FnOnce(&mut T) + 'static>(&self, callback: W) -> Option<()> {
         StateHandle::edit(self, callback)
     }
 }
