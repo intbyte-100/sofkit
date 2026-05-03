@@ -1,3 +1,4 @@
+use crate::async_state::{AsyncReadState, AsyncWriteState};
 use crate::prelude::state_ext::StateHolderExt;
 use crate::scheduler::Scheduler;
 use std::cell::{Cell, RefCell};
@@ -41,6 +42,10 @@ pub trait ReadState<T: 'static>: Clone {
     {
         MappedState::new(self.clone(), map)
     }
+    
+    fn async_read(&self) -> AsyncReadState<T> where T: Clone, Self: 'static {
+        AsyncReadState::new(self.clone())
+    }
 }
 
 pub trait WriteState<T: 'static>: Clone {
@@ -70,6 +75,10 @@ pub trait WriteState<T: 'static>: Clone {
                 eprintln!("Error: State used after it was destroyed (forgot to attach_state_holder()?)");
             }
         }
+    }
+    
+    fn async_write(&self) -> AsyncWriteState<T> where Self: 'static {
+        AsyncWriteState::new(self.clone())
     }
 }
 

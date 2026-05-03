@@ -4,6 +4,7 @@ use crate::state::WriteState;
 mod prelude;
 mod state;
 
+pub mod async_state;
 mod batching;
 mod scheduler;
 
@@ -14,7 +15,17 @@ use gtk::{Application, ApplicationWindow, glib, prelude::*};
 fn build_ui() -> impl IsA<gtk::Widget> {
     statefull(|holder| {
         let counter = holder.state(0);
+
         let text_state = holder.state(String::new());
+
+        let async_counter = counter.async_write();
+        
+        tokio::spawn(async move {
+           loop {
+               async_counter.replace(0).await;
+               tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+           }
+        });
 
         vbox![
             label().reactive().text_state(&counter),
@@ -35,7 +46,7 @@ fn build_ui() -> impl IsA<gtk::Widget> {
                 .reactive()
                 .label_state(&text_state)
                 .with_state(&counter, |it, value| it.set_vexpand(value.get() % 2 == 0))
-                .on_click(move || counter.edit(|it| *it += 1)),
+                .on_click(move || { counter.edit(|it| *it += 1) }),
         ]
         .build()
     })
@@ -51,7 +62,8 @@ fn build_window(app: &Application) {
     window.present();
 }
 
-fn main() -> glib::ExitCode {
+#[tokio::main]
+async fn main() -> glib::ExitCode {
     let app = Application::builder()
         .application_id("org.gtk_rs.HelloWorld1")
         .build();
