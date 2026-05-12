@@ -1,33 +1,23 @@
-use crate::state::ReadState;
-use crate::state::WriteState;
-
-mod prelude;
-mod state;
-
-pub mod async_state;
-mod batching;
-mod scheduler;
-
-use crate::prelude::*;
-use crate::state::State;
 use gtk::{Application, ApplicationWindow, glib, prelude::*};
+use sofkit::prelude::*;
+use sofkit::state::{ReadState, WriteState};
+use sofkit::{hbox, vbox};
 
 fn build_ui() -> impl IsA<gtk::Widget> {
     statefull(|holder| {
         let counter = holder.state(0);
-
         let text_state = holder.state(String::new());
-
         let async_counter = counter.async_write();
-        
+
         tokio::spawn(async move {
-           loop {
-               async_counter.replace(0).await;
-               tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
-           }
+            loop {
+                async_counter.replace(0).await;
+                tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+            }
         });
 
         vbox![
+            label().reactive().text_state(&counter),
             label().reactive().text_state(&counter),
             entry().reactive().bind_state_two_way(text_state.clone()),
             entry().reactive().bind_state_two_way(text_state.clone()),
@@ -55,7 +45,7 @@ fn build_ui() -> impl IsA<gtk::Widget> {
 fn build_window(app: &Application) {
     let window = ApplicationWindow::builder()
         .application(app)
-        .title("My GTK App")
+        .title("Sofkit Dev Tests")
         .child(&build_ui())
         .build();
 
@@ -65,7 +55,7 @@ fn build_window(app: &Application) {
 #[tokio::main]
 async fn main() -> glib::ExitCode {
     let app = Application::builder()
-        .application_id("org.gtk_rs.HelloWorld1")
+        .application_id("org.gtk_rs.SofkitDevTests")
         .build();
 
     app.connect_activate(build_window);
