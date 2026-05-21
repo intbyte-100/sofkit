@@ -1,119 +1,56 @@
 use std::fmt::Display;
 
-use gtk::glib::object::ObjectExt;
-use gtk::prelude::{ButtonExt, WidgetExt};
+use gtk::glib::object::IsA;
+use gtk::prelude::ButtonExt;
 use gtk::{Button, builders::ButtonBuilder};
 
-use crate::state::{State, StateAccessor};
+use crate::prelude::reactive_builder::ReactiveBuilder;
+use crate::state::ReadState;
 
-pub struct ReactiveButtonBuilder {
-    on_click: Option<Box<dyn Fn()>>,
-    subscribes: Vec<Box<dyn Fn(&Button)>>,
-    builder: ButtonBuilder,
-}
-
-impl ReactiveButtonBuilder {
-    pub fn new() -> Self {
-        Self {
-            on_click: None,
-            subscribes: Vec::new(),
-            builder: Button::builder(),
-        }
-    }
-
-    pub fn on_click<T: Fn() + 'static>(mut self, on_click: T) -> Self {
-        self.on_click = Some(Box::new(on_click));
-        self
-    }
-
-    pub fn with_raw<T>(mut self, editor: T) -> Self
+pub trait ReactiveButtonBuilder<W: IsA<Button> + IsA<gtk::Widget> + 'static>:
+    ReactiveBuilder<W>
+{
+    fn label<T: Display + 'static, D: ReadState<T> + 'static>(self, string: &D) -> Self
     where
-        T: Fn(ButtonBuilder) -> ButtonBuilder,
+        Self: Sized,
     {
-        self.builder = editor(self.builder);
-        self
-    }
-
-    pub fn label_state<T: Display + 'static, D: State<T> + 'static>(self, string: &D) -> Self {
-        self.with_state(string, |button, it| {
+        self.bind(string, |button, it| {
             button.set_label(it.with(|it| it.to_string()).as_str())
         })
     }
 
-    pub fn css_class_state<T: Display + 'static, D: State<T> + 'static>(self, string: &D) -> Self {
-        self.with_state(string, |button, it| {
-            for i in button.css_classes() {
-                button.remove_css_class(i.as_str());
-            }
-            button.add_css_class(it.with(|it| it.to_string()).as_str())
-        })
-    }
-
-    pub fn bind_state<
-        T: Clone + 'static,
-        S: Fn(&Button, T) + 'static + Clone,
-        D: State<T> + 'static,
-    >(
-        self,
-        state: &D,
-        callback: S,
-    ) -> Self {
-        self.with_state(state, move |button, it| {
-            callback(&button, it.get());
-        })
-    }
-
-    pub fn with_state<
-        T: 'static,
-        S: Fn(Button, &StateAccessor<T>) + 'static + Clone,
-        D: State<T> + 'static,
-    >(
-        mut self,
-        state: &D,
-        callback: S,
-    ) -> Self {
-        let state = state.clone();
-
-        self.subscribes.push(Box::new(move |button| {
-            let callback = callback.clone();
-
-            let button_weak = button.downgrade();
-
-            state.subscribe_widget(button, move |it| {
-                if let Some(button_ref) = button_weak.upgrade() {
-                    callback(button_ref, it);
-                }
-            });
-        }));
-
+    fn on_click<T: Fn() + 'static>(self, on_click: T) -> Self
+    where
+        Self: Sized,
+    {
+        self.as_widget().connect_clicked(move |_| on_click());
         self
     }
+}
+pub struct ReactiveButtonBuilderStruct {
+    widget: Button,
+}
 
-    pub fn build(self) -> Button {
-        let button = self.builder.build();
+impl ReactiveBuilder<Button> for ReactiveButtonBuilderStruct {
+    fn as_widget(&self) -> &Button {
+        &self.widget
+    }
 
-        if let Some(on_click) = self.on_click {
-            button.connect_clicked(move |_| on_click());
-        }
-
-        for subscribe in self.subscribes {
-            subscribe(&button);
-        }
-
-        button
+    fn build(self) -> Button {
+        self.widget
     }
 }
 
+impl ReactiveButtonBuilder<Button> for ReactiveButtonBuilderStruct {}
+
 pub trait ButtonBuilderExt {
-    fn reactive(self) -> ReactiveButtonBuilder;
+    fn reactive(self) -> ReactiveButtonBuilderStruct;
 }
 
 impl ButtonBuilderExt for ButtonBuilder {
-    fn reactive(self) -> ReactiveButtonBuilder {
-        ReactiveButtonBuilder {
-            on_click: None,
-            builder: self,
-            subscribes: Vec::new(),
+    fn reactive(self) -> ReactiveButtonBuilderStruct {
+        ReactiveButtonBuilderStruct {
+            widget: self.build(),
         }
     }
 }

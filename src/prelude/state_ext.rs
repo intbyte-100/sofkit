@@ -1,5 +1,5 @@
 use crate::state::{StateHolder, Subscription, SubscriptionHolder};
-use gtk::glib::object::{IsA, ObjectExt};
+use gtk::glib::object::{Cast, IsA, ObjectExt};
 
 const STATE_HOLDER_KEY: &str = "sofkit-state-holder";
 const SUBSCRIPTION_KEY: &str = "sofkit-state-holder";
@@ -15,11 +15,16 @@ pub fn statefull<T: FnOnce(&StateHolder) -> W, W: IsA<gtk::Widget>>(
 }
 
 pub trait StateHolderExt {
+    fn build(&self) -> gtk::Widget;
     fn attach_state_holder(&self, holder: StateHolder);
     fn attach_subscription(&self, subscription: Subscription);
 }
 
 impl<T: IsA<gtk::Widget>> StateHolderExt for T {
+    fn build(&self) -> gtk::Widget {
+        self.upcast_ref().clone()
+    }
+
     fn attach_state_holder(&self, holder: StateHolder) {
         unsafe { self.set_data(STATE_HOLDER_KEY, holder) }
     }

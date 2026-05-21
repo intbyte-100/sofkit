@@ -195,7 +195,7 @@ impl<T: 'static + Clone> StateHandle<T> {
         }
     }
 
-    pub fn get(&self) -> Option<Rc<StateCell<T>>> {
+    fn get(&self) -> Option<Rc<StateCell<T>>> {
         self.inner.upgrade()
     }
 
