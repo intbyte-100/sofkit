@@ -62,7 +62,7 @@ impl<T: Clone + 'static> AsyncReadState<T> {
     pub async fn snapshot(&self) -> Option<T> {
         let (reply_tx, reply_rx) = oneshot::channel::<T>();
         self.sender.send(reply_tx).await.ok()?;
-        
+
         reply_rx.await.ok()
     }
 }

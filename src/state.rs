@@ -42,8 +42,12 @@ pub trait ReadState<T: 'static>: Clone {
     {
         MappedState::new(self.clone(), map)
     }
-    
-    fn async_read(&self) -> AsyncReadState<T> where T: Clone, Self: 'static {
+
+    fn async_read(&self) -> AsyncReadState<T>
+    where
+        T: Clone,
+        Self: 'static,
+    {
         AsyncReadState::new(self.clone())
     }
 }
@@ -54,14 +58,18 @@ pub trait WriteState<T: 'static>: Clone {
     fn try_replace(&self, value: T) -> Option<()> {
         self.try_edit(move |it| *it = value)
     }
-    
+
     #[track_caller]
     fn edit<W: FnOnce(&mut T) + 'static>(&self, callback: W) {
         if self.try_edit(callback).is_none() {
             if cfg!(debug_assertions) {
-                panic!("Error: State used after it was destroyed (forgot to attach_state_holder()?)");
+                panic!(
+                    "Error: State used after it was destroyed (forgot to attach_state_holder()?)"
+                );
             } else {
-                eprintln!("Error: State used after it was destroyed (forgot to attach_state_holder()?)");
+                eprintln!(
+                    "Error: State used after it was destroyed (forgot to attach_state_holder()?)"
+                );
             }
         }
     }
@@ -70,14 +78,21 @@ pub trait WriteState<T: 'static>: Clone {
     fn replace(&self, value: T) {
         if self.try_replace(value).is_none() {
             if cfg!(debug_assertions) {
-                panic!("Error: State used after it was destroyed (forgot to attach_state_holder()?)");
+                panic!(
+                    "Error: State used after it was destroyed (forgot to attach_state_holder()?)"
+                );
             } else {
-                eprintln!("Error: State used after it was destroyed (forgot to attach_state_holder()?)");
+                eprintln!(
+                    "Error: State used after it was destroyed (forgot to attach_state_holder()?)"
+                );
             }
         }
     }
-    
-    fn async_write(&self) -> AsyncWriteState<T> where Self: 'static {
+
+    fn async_write(&self) -> AsyncWriteState<T>
+    where
+        Self: 'static,
+    {
         AsyncWriteState::new(self.clone())
     }
 }

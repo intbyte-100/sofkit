@@ -11,6 +11,12 @@ impl BoxWrapper {
         self
     }
 
+    pub fn append(self, widget: impl IsA<gtk::Widget>) -> Self {
+        self.0.append(&widget);
+
+        self
+    }
+
     pub fn build(self) -> gtk::Box {
         self.0
     }

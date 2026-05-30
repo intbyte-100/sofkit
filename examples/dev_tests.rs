@@ -1,6 +1,5 @@
 use gtk::{Application, ApplicationWindow, Widget, glib, prelude::*};
 use sofkit::prelude::button_builder::ReactiveButtonBuilder;
-use sofkit::prelude::state_ext::StateHolderExt;
 
 use sofkit::prelude::reactive_builder::ReactiveBuilder;
 use sofkit::prelude::*;
@@ -12,74 +11,97 @@ enum Operation {
     Add,
     Sub,
     None,
+    Mul,
+    Div,
+    Mod,
 }
 
-fn row<S: WriteState<i32> + 'static>(view: &S, from: i32, to: i32) -> BoxWrapper {
+fn row<S: WriteState<f64> + 'static>(view: &S, from: i32, to: i32) -> BoxWrapper {
     hbox![].append_all((from..to).map(|i| {
         button()
             .label(i.to_string())
+            .hexpand(true)
+            .vexpand(true)
             .reactive()
             .on_click({
                 let view = view.clone();
-                move || view.edit(move |value| *value = format!("{value}{i}").parse().unwrap_or(0))
+                move || {
+                    view.edit(move |value| *value = format!("{value}{i}").parse().unwrap_or(0.0))
+                }
             })
             .build()
     }))
 }
 
-fn operation_button<S: State<i32> + 'static, O: WriteState<Operation> + 'static>(
-    label: &str,
-    operation: Operation,
-    view: &S,
-    store: &S,
-    operation_state: &O,
-) -> impl IsA<Widget> {
-    button()
-        .label(label)
-        .reactive()
-        .on_click({
-            let view = view.clone();
-            let store = store.clone();
-            let operation_state = operation_state.clone();
-
-            move || {
-                view.with(|value| store.replace(*value));
-                view.replace(0);
-                operation_state.replace(operation);
-            }
-        })
-        .build()
-}
-
 fn build_ui() -> impl IsA<gtk::Widget> {
     statefull(|holder| {
-        let view = holder.state(0);
-        let store = holder.state(0);
+        let view = holder.state(0.0);
+        let store = holder.state(0.0);
         let operation = holder.state(Operation::None);
 
-        vbox![
-            label().reactive().text_state(&view),
-            row(&view, 7, 10),
-            row(&view, 4, 7),
-            row(&view, 1, 4),
-            hbox![
-                operation_button("+", Operation::Add, &view, &store, &operation),
-                operation_button("-", Operation::Sub, &view, &store, &operation),
+        let operation_button = {
+            let view = view.clone();
+            let store = store.clone();
+            let operation = operation.clone();
+            move |label: &str, op: Operation| {
                 button()
-                    .label("=")
+                    .label(label)
+                    .hexpand(true)
+                    .vexpand(true)
                     .reactive()
-                    .on_click(move || {
-                        match operation.get().unwrap() {
-                            Operation::Add => {
-                                view.replace(store.with(|a| view.with(|b| a + b)).unwrap().unwrap())
-                            }
-                            Operation::Sub => {
-                                view.replace(store.with(|a| view.with(|b| a - b)).unwrap().unwrap())
-                            }
-                            _ => {}
+                    .on_click({
+                        let view = view.clone();
+                        let store = store.clone();
+                        let operation_state = operation.clone();
+
+                        move || {
+                            view.with(|value| store.replace(*value));
+                            view.replace(0.0);
+                            operation_state.replace(op);
                         }
-                    }),
-            ]
+                    })
+                    .build()
+            }
+        };
+        vbox![
+            label().height_request(50).reactive().text_state(&view),
+            row(&view, 7, 10).append(operation_button("*", Operation::Mul)),
+            row(&view, 4, 7).append(operation_button("/", Operation::Div)),
+            row(&view, 1, 4).append(operation_button("%", Operation::Mod)),
+            row(&view, 0, 1)
+                .append_all(
+                    vec![
+                        operation_button("+", Operation::Add),
+                        operation_button("-", Operation::Sub)
+                    ]
+                    .into_iter()
+                )
+                .append(
+                    button()
+                        .label("=")
+                        .hexpand(true)
+                        .vexpand(true)
+                        .reactive()
+                        .on_click({
+                            let view = view.clone();
+                            let store = store.clone();
+                            let operation = operation.clone();
+                            move || {
+                                let a = store.get().unwrap();
+                                let b = view.get().unwrap();
+                                let result = match operation.get().unwrap() {
+                                    Operation::Add => a + b,
+                                    Operation::Sub => a - b,
+                                    Operation::Mul => a * b,
+                                    Operation::Div => a / b,
+                                    Operation::Mod => a % b,
+                                    Operation::None => a,
+                                };
+                                view.replace(result);
+                            }
+                        })
+                        .build()
+                )
         ]
         .build()
     })
@@ -97,8 +119,6 @@ fn build_window(app: &Application) {
 
 #[tokio::main]
 async fn main() -> glib::ExitCode {
-    
-    
     let app = Application::builder()
         .application_id("org.gtk_rs.SofkitDevTests")
         .build();
