@@ -28,7 +28,7 @@ impl BoxWrapper {
         self.0
     }
     
-    pub fn childs<F>(self, f: F) -> Self
+    pub fn children<F>(self, f: F) -> Self
     where
         F: FnOnce()
     {
@@ -37,6 +37,14 @@ impl BoxWrapper {
     }
 }
 
+
+pub fn hbox() -> BoxWrapper {
+    BoxWrapper::new(gtk::Box::new(gtk::Orientation::Horizontal, 0))
+}
+
+pub fn vbox() -> BoxWrapper {
+    BoxWrapper::new(gtk::Box::new(gtk::Orientation::Vertical, 0))
+}
 
 impl Scope for BoxWrapper {
     fn bind_widget(&self, widget: gtk::Widget) {

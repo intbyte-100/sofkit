@@ -1,5 +1,3 @@
-
-
 use gtk::Button;
 use gtk::glib::object::{IsA};
 use gtk::prelude::ButtonExt;

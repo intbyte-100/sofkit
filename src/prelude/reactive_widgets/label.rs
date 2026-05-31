@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use gtk::Label;
 use gtk::prelude::*;
 
@@ -6,12 +8,12 @@ use crate::runtime::Runtime;
 use crate::value::ReactiveValue;
 
 pub trait ReactiveLabel: ReactiveWidget<Label> {
-    fn text<D: ReactiveValue<String> + 'static>(self, state: D) -> Self
+    fn text<D: ReactiveValue<T> + 'static, T: Display + 'static>(self, state: D) -> Self
     where
         Self: Sized,
     {
         self.bind(state, |label, value| {
-            label.set_label(value.as_str());
+            label.set_label(value.to_string().as_str());
         })
     }
 }
@@ -32,7 +34,7 @@ impl ReactiveWidget<Label> for ReactiveLabelStruct {
 
 impl ReactiveLabel for ReactiveLabelStruct {}
 
-pub fn label<D: ReactiveValue<String> + 'static>(text: D) -> ReactiveLabelStruct {
+pub fn label<D: ReactiveValue<T> + 'static, T: Display + 'static>(text: D) -> ReactiveLabelStruct {
     let widget = Label::new(None);
     Runtime::get().bind_widget(&widget);
     ReactiveLabelStruct { widget }.text(text)
