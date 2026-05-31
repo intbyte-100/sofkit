@@ -9,7 +9,7 @@ macro_rules! hbox {
             container.append(&widget);
         )*
 
-        $crate::prelude::BoxWrapper(container)
+        $crate::prelude::BoxWrapper::new(container)
     }};
 }
 
@@ -24,6 +24,6 @@ macro_rules! vbox {
             container.append(&widget);
         )*
 
-        $crate::prelude::BoxWrapper(container)
+        $crate::prelude::BoxWrapper::new(container)
     }};
 }

@@ -6,7 +6,6 @@ use gtk::{
 
 use crate::value::ReactiveValue;
 
-
 pub trait ReactiveWidget<T: IsA<Widget>> {
     fn as_widget(&self) -> &T;
 
@@ -20,7 +19,9 @@ pub trait ReactiveWidget<T: IsA<Widget>> {
     where
         Self: Sized,
     {
-        state.bind(self.as_widget(), callback);
+        state.bind(self.as_widget(), move |widget, value| {
+            value.with(|v| callback(widget, v))
+        });
         self
     }
 

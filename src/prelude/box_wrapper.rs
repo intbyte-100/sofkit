@@ -1,9 +1,16 @@
 use gtk::{glib::object::IsA, prelude::BoxExt};
 
-#[derive(Debug)]
+use crate::runtime::{Runtime, Scope};
+
+#[derive(Debug, Clone)]
 pub struct BoxWrapper(pub gtk::Box);
 
 impl BoxWrapper {
+    pub fn new(gtk_box: gtk::Box) -> Self {
+        Runtime::get().bind_widget(&gtk_box);
+        Self(gtk_box)
+    }
+    
     pub fn append_all(self, iter: impl Iterator<Item = impl IsA<gtk::Widget>>) -> Self {
         for widget in iter {
             self.0.append(&widget);
@@ -19,5 +26,20 @@ impl BoxWrapper {
 
     pub fn build(self) -> gtk::Box {
         self.0
+    }
+    
+    pub fn childs<F>(self, f: F) -> Self
+    where
+        F: FnOnce()
+    {
+        Runtime::get().run_with_scope(self.clone(), f);
+        self
+    }
+}
+
+
+impl Scope for BoxWrapper {
+    fn bind_widget(&self, widget: gtk::Widget) {
+        self.0.append(&widget);
     }
 }

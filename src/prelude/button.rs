@@ -1,24 +1,22 @@
-use std::fmt::Display;
 
-use gtk::glib::object::IsA;
+
+use gtk::Button;
+use gtk::glib::object::{IsA};
 use gtk::prelude::ButtonExt;
-use gtk::{Button, builders::ButtonBuilder};
 
 use crate::prelude::reactive_widget::ReactiveWidget;
-use crate::state::ReadState;
+use crate::runtime::Runtime;
 use crate::value::ReactiveValue;
 
-pub trait ReactiveButton<W: IsA<Button> + IsA<gtk::Widget> + 'static>:
-    ReactiveWidget<W>
-{
+pub trait ReactiveButton<W: IsA<Button> + IsA<gtk::Widget> + 'static>: ReactiveWidget<W> {
     fn label<D: ReactiveValue<String> + 'static>(self, string: D) -> Self
     where
         Self: Sized,
     {
         string.bind(self.as_widget(), |button, value| {
-            button.set_label(value.as_str());
+            value.with(|value| button.set_label(value));
         });
-        
+
         self
     }
 
@@ -30,6 +28,9 @@ pub trait ReactiveButton<W: IsA<Button> + IsA<gtk::Widget> + 'static>:
         self
     }
 }
+
+impl ReactiveButton<Button> for ReactiveButtonStruct {}
+
 pub struct ReactiveButtonStruct {
     widget: Button,
 }
@@ -44,22 +45,10 @@ impl ReactiveWidget<Button> for ReactiveButtonStruct {
     }
 }
 
-impl ReactiveButton<Button> for ReactiveButtonStruct {}
-
-pub trait ButtonBuilderExt {
-    fn reactive(self) -> ReactiveButtonStruct;
-}
-
-impl ButtonBuilderExt for ButtonBuilder {
-    fn reactive(self) -> ReactiveButtonStruct {
-        ReactiveButtonStruct {
-            widget: self.build(),
-        }
-    }
-}
-
 pub fn button() -> ReactiveButtonStruct {
-    ReactiveButtonStruct {
-        widget: Button::builder().build(),
-    }
+    let widget = Button::new();
+
+    Runtime::get().bind_widget(&widget);
+
+    ReactiveButtonStruct { widget }
 }
