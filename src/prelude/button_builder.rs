@@ -4,19 +4,22 @@ use gtk::glib::object::IsA;
 use gtk::prelude::ButtonExt;
 use gtk::{Button, builders::ButtonBuilder};
 
-use crate::prelude::reactive_builder::ReactiveBuilder;
+use crate::prelude::reactive_widget::ReactiveWidget;
 use crate::state::ReadState;
+use crate::value::ReactiveValue;
 
-pub trait ReactiveButtonBuilder<W: IsA<Button> + IsA<gtk::Widget> + 'static>:
-    ReactiveBuilder<W>
+pub trait ReactiveButton<W: IsA<Button> + IsA<gtk::Widget> + 'static>:
+    ReactiveWidget<W>
 {
-    fn label<T: Display + 'static, D: ReadState<T> + 'static>(self, string: &D) -> Self
+    fn label<D: ReactiveValue<String> + 'static>(self, string: D) -> Self
     where
         Self: Sized,
     {
-        self.bind(string, |button, it| {
-            button.set_label(it.with(|it| it.to_string()).as_str())
-        })
+        string.bind(self.as_widget(), |button, value| {
+            button.set_label(value.as_str());
+        });
+        
+        self
     }
 
     fn on_click<T: Fn() + 'static>(self, on_click: T) -> Self
@@ -27,11 +30,11 @@ pub trait ReactiveButtonBuilder<W: IsA<Button> + IsA<gtk::Widget> + 'static>:
         self
     }
 }
-pub struct ReactiveButtonBuilderStruct {
+pub struct ReactiveButtonStruct {
     widget: Button,
 }
 
-impl ReactiveBuilder<Button> for ReactiveButtonBuilderStruct {
+impl ReactiveWidget<Button> for ReactiveButtonStruct {
     fn as_widget(&self) -> &Button {
         &self.widget
     }
@@ -41,20 +44,22 @@ impl ReactiveBuilder<Button> for ReactiveButtonBuilderStruct {
     }
 }
 
-impl ReactiveButtonBuilder<Button> for ReactiveButtonBuilderStruct {}
+impl ReactiveButton<Button> for ReactiveButtonStruct {}
 
 pub trait ButtonBuilderExt {
-    fn reactive(self) -> ReactiveButtonBuilderStruct;
+    fn reactive(self) -> ReactiveButtonStruct;
 }
 
 impl ButtonBuilderExt for ButtonBuilder {
-    fn reactive(self) -> ReactiveButtonBuilderStruct {
-        ReactiveButtonBuilderStruct {
+    fn reactive(self) -> ReactiveButtonStruct {
+        ReactiveButtonStruct {
             widget: self.build(),
         }
     }
 }
 
-pub fn button() -> ButtonBuilder {
-    Button::builder()
+pub fn button() -> ReactiveButtonStruct {
+    ReactiveButtonStruct {
+        widget: Button::builder().build(),
+    }
 }

@@ -1,7 +1,7 @@
 use gtk::{Application, ApplicationWindow, Widget, glib, prelude::*};
-use sofkit::prelude::button_builder::ReactiveButtonBuilder;
+use sofkit::prelude::button_builder::ReactiveButton;
 
-use sofkit::prelude::reactive_builder::ReactiveBuilder;
+use sofkit::prelude::reactive_widget::ReactiveWidget;
 use sofkit::prelude::*;
 use sofkit::state::{ReadState, State, WriteState};
 use sofkit::{hbox, vbox};
@@ -19,10 +19,9 @@ enum Operation {
 fn row<S: WriteState<f64> + 'static>(view: &S, from: i32, to: i32) -> BoxWrapper {
     hbox![].append_all((from..to).map(|i| {
         button()
-            .label(i.to_string())
             .hexpand(true)
             .vexpand(true)
-            .reactive()
+            .label(i.to_string())
             .on_click({
                 let view = view.clone();
                 move || {
@@ -43,12 +42,11 @@ fn build_ui() -> impl IsA<gtk::Widget> {
             let view = view.clone();
             let store = store.clone();
             let operation = operation.clone();
-            move |label: &str, op: Operation| {
+            move |label: &'static str, op: Operation| {
                 button()
                     .label(label)
-                    .hexpand(true)
+                    .hexpand(store.map(|i| (*i as i32)%2 == 0))
                     .vexpand(true)
-                    .reactive()
                     .on_click({
                         let view = view.clone();
                         let store = store.clone();
@@ -81,7 +79,6 @@ fn build_ui() -> impl IsA<gtk::Widget> {
                         .label("=")
                         .hexpand(true)
                         .vexpand(true)
-                        .reactive()
                         .on_click({
                             let view = view.clone();
                             let store = store.clone();

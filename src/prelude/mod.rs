@@ -3,7 +3,7 @@ mod macros;
 
 pub mod box_wrapper;
 pub mod button_builder;
-pub mod reactive_builder;
+pub mod reactive_widget;
 pub mod reactive_widgets;
 pub mod state_ext;
 
