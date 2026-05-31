@@ -1,10 +1,12 @@
-use gtk::{Application, ApplicationWindow, Widget, glib, prelude::*};
-use sofkit::prelude::button_builder::ReactiveButton;
+use gtk::{Application, ApplicationWindow, glib, prelude::*};
 
+use sofkit::prelude::button::ReactiveButton;
 use sofkit::prelude::reactive_widget::ReactiveWidget;
 use sofkit::prelude::*;
-use sofkit::state::{ReadState, State, WriteState};
+use sofkit::runtime::Runtime;
+use sofkit::state::{ReadState, WriteState};
 use sofkit::{hbox, vbox};
+
 
 #[derive(Clone, Copy)]
 enum Operation {
@@ -16,23 +18,33 @@ enum Operation {
     Mod,
 }
 
-fn row<S: WriteState<f64> + 'static>(view: &S, from: i32, to: i32) -> BoxWrapper {
-    hbox![].append_all((from..to).map(|i| {
-        button()
-            .hexpand(true)
-            .vexpand(true)
-            .label(i.to_string())
-            .on_click({
-                let view = view.clone();
-                move || {
-                    view.edit(move |value| *value = format!("{value}{i}").parse().unwrap_or(0.0))
-                }
-            })
-            .build()
-    }))
+fn row<S: WriteState<f64> + 'static>(
+    view: &S,
+    from: i32,
+    to: i32,
+    content: impl FnOnce(),
+) -> BoxWrapper {
+    hbox!().childs(|| {
+        for i in from..to {
+            button()
+                .hexpand(true)
+                .vexpand(true)
+                .label(i.to_string())
+                .on_click({
+                    let view = view.clone();
+                    move || {
+                        view.edit(move |value| {
+                            *value = format!("{value}{i}").parse().unwrap_or(0.0)
+                        })
+                    }
+                });
+        }
+
+        content()
+    })
 }
 
-fn build_ui() -> impl IsA<gtk::Widget> {
+fn build_ui() {
     statefull(|holder| {
         let view = holder.state(0.0);
         let store = holder.state(0.0);
@@ -45,7 +57,7 @@ fn build_ui() -> impl IsA<gtk::Widget> {
             move |label: &'static str, op: Operation| {
                 button()
                     .label(label)
-                    .hexpand(store.map(|i| (*i as i32)%2 == 0))
+                    .hexpand(true)
                     .vexpand(true)
                     .on_click({
                         let view = view.clone();
@@ -57,58 +69,55 @@ fn build_ui() -> impl IsA<gtk::Widget> {
                             view.replace(0.0);
                             operation_state.replace(op);
                         }
-                    })
-                    .build()
+                    });
             }
         };
-        vbox![
-            label().height_request(50).reactive().text_state(&view),
-            row(&view, 7, 10).append(operation_button("*", Operation::Mul)),
-            row(&view, 4, 7).append(operation_button("/", Operation::Div)),
-            row(&view, 1, 4).append(operation_button("%", Operation::Mod)),
-            row(&view, 0, 1)
-                .append_all(
-                    vec![
-                        operation_button("+", Operation::Add),
-                        operation_button("-", Operation::Sub)
-                    ]
-                    .into_iter()
-                )
-                .append(
-                    button()
-                        .label("=")
-                        .hexpand(true)
-                        .vexpand(true)
-                        .on_click({
-                            let view = view.clone();
-                            let store = store.clone();
-                            let operation = operation.clone();
-                            move || {
-                                let a = store.get().unwrap();
-                                let b = view.get().unwrap();
-                                let result = match operation.get().unwrap() {
-                                    Operation::Add => a + b,
-                                    Operation::Sub => a - b,
-                                    Operation::Mul => a * b,
-                                    Operation::Div => a / b,
-                                    Operation::Mod => a % b,
-                                    Operation::None => a,
-                                };
-                                view.replace(result);
-                            }
-                        })
-                        .build()
-                )
-        ]
-        .build()
-    })
+        vbox!()
+            .childs(|| {
+                label(view.map(|it| it.to_string()));
+                    
+
+
+                row(&view, 7, 10, || operation_button("*", Operation::Mul));
+                row(&view, 4, 7, || operation_button("/", Operation::Div));
+                row(&view, 1, 4, || operation_button("%", Operation::Mod));
+
+                row(&view, 0, 1, || {
+                    operation_button("+", Operation::Add);
+                    operation_button("-", Operation::Sub);
+
+                    button().label("=").hexpand(true).vexpand(true).on_click({
+                        let view = view.clone();
+                        let store = store.clone();
+                        let operation = operation.clone();
+                        move || {
+                            let a = store.get().unwrap();
+                            let b = view.get().unwrap();
+                            let result = match operation.get().unwrap() {
+                                Operation::Add => a + b,
+                                Operation::Sub => a - b,
+                                Operation::Mul => a * b,
+                                Operation::Div => a / b,
+                                Operation::Mod => a % b,
+                                Operation::None => a,
+                            };
+                            view.replace(result);
+                        }
+                    });
+                });
+            })
+            .build()
+    });
 }
 
 fn build_window(app: &Application) {
+    let gtk_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
+
+    Runtime::get().run_with_scope(BoxWrapper(gtk_box.clone()), || build_ui());
     let window = ApplicationWindow::builder()
         .application(app)
         .title("Sofkit Dev Tests")
-        .child(&build_ui())
+        .child(&gtk_box)
         .build();
 
     window.present();
