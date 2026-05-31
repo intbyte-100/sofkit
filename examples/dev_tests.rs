@@ -1,12 +1,11 @@
 use gtk::{Application, ApplicationWindow, glib, prelude::*};
 
+use sofkit::prelude::box_wrapper::{hbox, vbox};
 use sofkit::prelude::button::ReactiveButton;
 use sofkit::prelude::reactive_widget::ReactiveWidget;
 use sofkit::prelude::*;
 use sofkit::runtime::Runtime;
 use sofkit::state::{ReadState, WriteState};
-use sofkit::{hbox, vbox};
-
 
 #[derive(Clone, Copy)]
 enum Operation {
@@ -18,13 +17,8 @@ enum Operation {
     Mod,
 }
 
-fn row<S: WriteState<f64> + 'static>(
-    view: &S,
-    from: i32,
-    to: i32,
-    content: impl FnOnce(),
-) -> BoxWrapper {
-    hbox!().childs(|| {
+fn row<S: WriteState<f64> + 'static>(view: &S, from: i32, to: i32) -> BoxWrapper {
+    hbox().children(|| {
         for i in from..to {
             button()
                 .hexpand(true)
@@ -39,8 +33,6 @@ fn row<S: WriteState<f64> + 'static>(
                     }
                 });
         }
-
-        content()
     })
 }
 
@@ -54,43 +46,38 @@ fn build_ui() {
             let view = view.clone();
             let store = store.clone();
             let operation = operation.clone();
-            move |label: &'static str, op: Operation| {
-                button()
-                    .label(label)
-                    .hexpand(true)
-                    .vexpand(true)
-                    .on_click({
-                        let view = view.clone();
-                        let store = store.clone();
-                        let operation_state = operation.clone();
 
-                        move || {
-                            view.with(|value| store.replace(*value));
-                            view.replace(0.0);
-                            operation_state.replace(op);
-                        }
-                    });
+            move |label: &'static str, op: Operation| {
+                button().label(label).hexpand(true).vexpand(true).on_click({
+                    let view = view.clone();
+                    let store = store.clone();
+                    let operation_state = operation.clone();
+
+                    move || {
+                        view.with(|value| store.replace(*value));
+                        view.replace(0.0);
+                        operation_state.replace(op);
+                    }
+                });
             }
         };
-        vbox!()
-            .childs(|| {
-                label(view.map(|it| it.to_string()));
-                    
+        vbox()
+            .children(|| {
+                label(view.clone());
 
+                row(&view, 7, 10).children(|| operation_button("*", Operation::Mul));
+                row(&view, 4, 7).children(|| operation_button("/", Operation::Div));
+                row(&view, 1, 4).children(|| operation_button("%", Operation::Mod));
 
-                row(&view, 7, 10, || operation_button("*", Operation::Mul));
-                row(&view, 4, 7, || operation_button("/", Operation::Div));
-                row(&view, 1, 4, || operation_button("%", Operation::Mod));
-
-                row(&view, 0, 1, || {
+                row(&view, 0, 1).children(|| {
                     operation_button("+", Operation::Add);
                     operation_button("-", Operation::Sub);
 
-                    button().label("=").hexpand(true).vexpand(true).on_click({
-                        let view = view.clone();
-                        let store = store.clone();
-                        let operation = operation.clone();
-                        move || {
+                    button()
+                        .label("=")
+                        .hexpand(true)
+                        .vexpand(true)
+                        .on_click(move || {
                             let a = store.get().unwrap();
                             let b = view.get().unwrap();
                             let result = match operation.get().unwrap() {
@@ -102,8 +89,7 @@ fn build_ui() {
                                 Operation::None => a,
                             };
                             view.replace(result);
-                        }
-                    });
+                        });
                 });
             })
             .build()
