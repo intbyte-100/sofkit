@@ -1,5 +1,5 @@
-use gtk::glib::object::{IsA, ObjectExt};
 use crate::state::{ReadState, StateAccessor};
+use gtk::glib::object::{IsA, ObjectExt};
 
 pub trait ReactiveValue<T> {
     fn bind<W, F>(self, widget: &W, f: F)
@@ -43,8 +43,9 @@ macro_rules! impl_reactive_value_for_string_repr {
 }
 
 impl_reactive_value_for_self!(String, i32, bool, f64, f32, usize, isize, u32, i64, u64);
-impl_reactive_value_for_string_repr!(&str, &String, i32, bool, f64, f32, usize, isize, u32, i64, u64);
-
+impl_reactive_value_for_string_repr!(
+    &str, &String, i32, bool, f64, f32, usize, isize, u32, i64, u64
+);
 
 impl<T, S> ReactiveValue<T> for S
 where

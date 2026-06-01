@@ -8,9 +8,11 @@ pub struct Runtime {
 
 impl Runtime {
     pub fn new() -> Self {
-        Self { vec: Default::default() }
+        Self {
+            vec: Default::default(),
+        }
     }
-    
+
     pub fn get() -> Rc<Runtime> {
         RUNTIME.with(|it| it.clone())
     }
@@ -23,20 +25,24 @@ impl Runtime {
         f();
         self.vec.borrow_mut().pop();
     }
-    
+
     pub fn with_current_scope<F>(&self, f: F)
     where
         F: FnOnce(&dyn Scope),
     {
-        f(self.vec.borrow().last().map(|s| s.as_ref()).expect("Scope in not registered"))
+        f(self
+            .vec
+            .borrow()
+            .last()
+            .map(|s| s.as_ref())
+            .expect("Scope in not registered"))
     }
-    
+
     pub fn bind_widget(&self, widget: &impl IsA<gtk::Widget>) {
         let widget: gtk::Widget = widget.upcast_ref().clone();
         self.with_current_scope(|scope| scope.bind_widget(widget));
     }
 }
-
 
 thread_local! {
     static RUNTIME: Rc<Runtime> = Rc::from(Runtime::new());

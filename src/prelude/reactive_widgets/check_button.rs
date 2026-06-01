@@ -30,7 +30,6 @@ pub trait ReactiveCheckButton: ReactiveWidget<CheckButton> {
         let self_after_bind = self.active(&state);
         let widget = self_after_bind.as_widget();
 
-        
         widget.connect_toggled(move |c| {
             let active = c.is_active();
             state.edit(move |it| *it = active);

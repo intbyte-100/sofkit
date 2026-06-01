@@ -1,5 +1,5 @@
 use gtk::Button;
-use gtk::glib::object::{IsA};
+use gtk::glib::object::IsA;
 use gtk::prelude::ButtonExt;
 
 use crate::prelude::reactive_widget::ReactiveWidget;
