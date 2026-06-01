@@ -214,7 +214,7 @@ fn equals_button() {
 }
 
 fn build_ui() {
-    statefull(|holder| {
+    stateful(|holder| {
         let calc = get_appdata::<Calculator>();
 
         let expr_view = calc.expr.make_state(holder).map(|tokens| {

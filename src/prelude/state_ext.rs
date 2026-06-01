@@ -4,7 +4,7 @@ use gtk::glib::object::{Cast, IsA, ObjectExt};
 const STATE_HOLDER_KEY: &str = "sofkit-state-holder";
 const SUBSCRIPTION_KEY: &str = "sofkit-state-holder";
 
-pub fn statefull<T: FnOnce(&StateHolder) -> W, W: IsA<gtk::Widget>>(
+pub fn stateful<T: FnOnce(&StateHolder) -> W, W: IsA<gtk::Widget>>(
     build_ui: T,
 ) -> impl IsA<gtk::Widget> {
     let state_holder = StateHolder::new();

@@ -13,4 +13,4 @@ pub use reactive_widgets::{
     ReactiveCheckButton, ReactiveCheckButtonStruct, ReactiveEntry, ReactiveEntryStruct,
     ReactiveLabel, ReactiveLabelStruct, check_button, entry, label,
 };
-pub use state_ext::statefull;
+pub use state_ext::stateful;
