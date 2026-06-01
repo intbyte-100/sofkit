@@ -13,7 +13,7 @@ use gtk::glib::{self, Object};
 
 use crate::batching::BatchGate;
 
-pub trait ReadState<T: 'static>: Clone {
+pub trait ReadState<T: 'static + Clone>: Clone {
     fn subscribe<W: Fn(&StateAccessor<T>) + 'static>(&self, callback: W) -> Option<Subscription>;
 
     #[inline]
@@ -35,12 +35,12 @@ pub trait ReadState<T: 'static>: Clone {
         self.with(|it| it.clone())
     }
 
-    fn map<M: 'static, C>(&self, map: C) -> MappedState<Self, T, M, C>
+    fn map<M: 'static + Clone, C>(self, map: C) -> impl ReadState<M>
     where
         C: Fn(&T) -> M + Clone + 'static,
-        Self: Sized,
+        Self: Sized, Self: ReadState<T>, Self: 'static,
     {
-        MappedState::new(self.clone(), map)
+        MappedState::new(self, map)
     }
 
     fn async_read(&self) -> AsyncReadState<T>
@@ -97,7 +97,7 @@ pub trait WriteState<T: 'static>: Clone {
     }
 }
 
-pub trait State<T: 'static>: ReadState<T> + WriteState<T> {}
+pub trait State<T: 'static + Clone>: ReadState<T> + WriteState<T> {}
 
 pub struct StateAccessor<T> {
     value: RefCell<T>,
@@ -121,7 +121,7 @@ impl<T> StateAccessor<T> {
         self.value.borrow().clone()
     }
 
-    fn with_mut<W: FnOnce(&mut T) -> M, M>(&self, callback: W) -> M {
+    pub(crate) fn with_mut<W: FnOnce(&mut T) -> M, M>(&self, callback: W) -> M {
         callback(&mut self.value.borrow_mut())
     }
 }
@@ -238,7 +238,7 @@ impl<T: 'static + Clone> WriteState<T> for StateHandle<T> {
 
 impl<T: 'static + Clone> State<T> for StateHandle<T> {}
 
-struct InnerMappedState<S, F: 'static, M: 'static, C>
+struct InnerMappedState<S, F: 'static + Clone, M: 'static, C>
 where
     S: ReadState<F> + 'static,
     C: Fn(&F) -> M + Clone + 'static,
@@ -250,7 +250,7 @@ where
     _marker: std::marker::PhantomData<(F, M)>,
 }
 
-impl<S, F: 'static, M: 'static, C> InnerMappedState<S, F, M, C>
+impl<S, F: 'static + Clone, M: 'static, C> InnerMappedState<S, F, M, C>
 where
     S: ReadState<F>,
     C: Fn(&F) -> M + Clone + 'static,
@@ -290,7 +290,7 @@ where
 }
 
 #[derive(Clone)]
-pub struct MappedState<S, F: 'static, M: 'static, C>
+pub struct MappedState<S, F: 'static + Clone, M: 'static, C>
 where
     S: ReadState<F> + 'static,
     C: Fn(&F) -> M + Clone + 'static,
@@ -298,7 +298,7 @@ where
     inner: Rc<InnerMappedState<S, F, M, C>>,
 }
 
-impl<S, F: 'static, M: 'static, C> MappedState<S, F, M, C>
+impl<S, F: 'static + Clone, M: 'static, C> MappedState<S, F, M, C>
 where
     S: ReadState<F>,
     C: Fn(&F) -> M + Clone + 'static,
@@ -312,7 +312,7 @@ where
 
 impl<S, F: 'static + Clone, M: 'static + Clone, C> ReadState<M> for MappedState<S, F, M, C>
 where
-    S: State<F>,
+    S: ReadState<F>,
     C: Fn(&F) -> M + Clone + 'static,
 {
     fn subscribe<W: Fn(&StateAccessor<M>) + 'static>(&self, callback: W) -> Option<Subscription> {

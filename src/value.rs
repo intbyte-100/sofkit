@@ -42,10 +42,24 @@ macro_rules! impl_reactive_value_for_string_repr {
     };
 }
 
-impl_reactive_value_for_self!(String, i32, bool, f64, f32, usize, isize, u32, i64, u64);
+impl_reactive_value_for_self!(String, i32, bool, f64, f32, usize, isize, u32, i64, u64, gtk::Align);
 impl_reactive_value_for_string_repr!(
     &str, &String, i32, bool, f64, f32, usize, isize, u32, i64, u64
 );
+
+impl<T> ReactiveValue<Vec<T>> for Vec<T>
+where
+    T: Clone + 'static,
+{
+    fn bind<W, F>(self, widget: &W, f: F)
+    where
+        W: IsA<gtk::Widget>,
+        F: Fn(&W, &StateAccessor<Vec<T>>) + 'static,
+    {
+        let accessor = StateAccessor::new(self);
+        f(widget, &accessor);
+    }
+}
 
 impl<T, S> ReactiveValue<T> for S
 where

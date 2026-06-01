@@ -18,7 +18,7 @@ impl WidgetMemo {
     }
 
     #[track_caller]
-    fn by_state<S: 'static, T: ReadState<S>>(
+    fn by_state<S: 'static + Clone, T: ReadState<S>>(
         &mut self,
         state: T,
         init: impl Fn() -> Widget,

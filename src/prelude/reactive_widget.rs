@@ -63,6 +63,15 @@ pub trait ReactiveWidget<T: IsA<Widget>> {
         })
     }
 
+    fn css_class<S: ReactiveValue<String>>(self, state: S) -> Self
+    where
+        Self: Sized,
+    {
+        self.bind(state, |widget, v| {
+            widget.set_css_classes(&[v.as_str()]);
+        })
+    }
+    
     fn hexpand<S: ReactiveValue<bool>>(self, state: S) -> Self
     where
         Self: Sized,
