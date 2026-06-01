@@ -38,7 +38,9 @@ pub trait ReadState<T: 'static + Clone>: Clone {
     fn map<M: 'static + Clone, C>(self, map: C) -> impl ReadState<M>
     where
         C: Fn(&T) -> M + Clone + 'static,
-        Self: Sized, Self: ReadState<T>, Self: 'static,
+        Self: Sized,
+        Self: ReadState<T>,
+        Self: 'static,
     {
         MappedState::new(self, map)
     }
@@ -350,6 +352,12 @@ glib::wrapper! {
     pub struct StateHolder(ObjectSubclass<imp::StateHolder>);
 }
 
+impl Default for StateHolder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl StateHolder {
     pub fn new() -> Self {
         Object::new()
@@ -391,6 +399,12 @@ impl Drop for Subscription {
 
 pub struct SubscriptionHolder {
     subscription: RefCell<Vec<Subscription>>,
+}
+
+impl Default for SubscriptionHolder {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SubscriptionHolder {

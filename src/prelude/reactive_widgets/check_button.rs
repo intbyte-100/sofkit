@@ -4,7 +4,7 @@ use gtk::prelude::*;
 use crate::prelude::reactive_widget::ReactiveWidget;
 use crate::runtime::Runtime;
 use crate::state::State;
-use crate::state::{ReadState, StateAccessor, StateHandle, WriteState};
+use crate::state::{ReadState, StateAccessor, WriteState};
 
 pub trait ReactiveCheckButton: ReactiveWidget<CheckButton> {
     fn active<T: ReadState<bool> + 'static>(self, state: &T) -> Self
@@ -14,10 +14,10 @@ pub trait ReactiveCheckButton: ReactiveWidget<CheckButton> {
         let state = state.clone();
         let widget = self.as_widget().downgrade();
         state.subscribe_widget(self.as_widget(), move |it: &StateAccessor<bool>| {
-            if let Some(cb) = widget.upgrade() {
-                if cb.is_active() != it.get() {
-                    cb.set_active(it.get());
-                }
+            if let Some(cb) = widget.upgrade()
+                && cb.is_active() != it.get()
+            {
+                cb.set_active(it.get());
             }
         });
         self

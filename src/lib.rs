@@ -6,6 +6,6 @@ mod batching;
 pub mod dynamic;
 mod scheduler;
 
+pub mod appdata;
 pub mod runtime;
 pub mod value;
-pub mod appdata;

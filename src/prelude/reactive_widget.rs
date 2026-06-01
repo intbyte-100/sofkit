@@ -1,8 +1,4 @@
-use gtk::{
-    Widget,
-    glib::object::{IsA, ObjectExt},
-    prelude::WidgetExt,
-};
+use gtk::{Widget, glib::object::IsA, prelude::WidgetExt};
 
 use crate::value::ReactiveValue;
 
@@ -71,7 +67,7 @@ pub trait ReactiveWidget<T: IsA<Widget>> {
             widget.set_css_classes(&[v.as_str()]);
         })
     }
-    
+
     fn hexpand<S: ReactiveValue<bool>>(self, state: S) -> Self
     where
         Self: Sized,

@@ -1,4 +1,4 @@
-use std::{any::Any, cell::RefCell, collections::HashMap, ops::DerefMut, panic::Location};
+use std::{any::Any, collections::HashMap, panic::Location};
 
 use gtk::Widget;
 
@@ -20,10 +20,10 @@ impl WidgetMemo {
     #[track_caller]
     fn by_state<S: 'static + Clone, T: ReadState<S>>(
         &mut self,
-        state: T,
-        init: impl Fn() -> Widget,
+        _state: T,
+        _init: impl Fn() -> Widget,
     ) -> Widget {
-        let memo: &mut Box<HashMap<S, Widget>> = self
+        let _memo: &mut Box<HashMap<S, Widget>> = self
             .memo_by_state
             .entry(std::panic::Location::caller())
             .or_insert(Box::from(HashMap::<S, Widget>::new()))

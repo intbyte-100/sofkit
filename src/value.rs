@@ -42,7 +42,19 @@ macro_rules! impl_reactive_value_for_string_repr {
     };
 }
 
-impl_reactive_value_for_self!(String, i32, bool, f64, f32, usize, isize, u32, i64, u64, gtk::Align);
+impl_reactive_value_for_self!(
+    String,
+    i32,
+    bool,
+    f64,
+    f32,
+    usize,
+    isize,
+    u32,
+    i64,
+    u64,
+    gtk::Align
+);
 impl_reactive_value_for_string_repr!(
     &str, &String, i32, bool, f64, f32, usize, isize, u32, i64, u64
 );

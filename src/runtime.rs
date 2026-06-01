@@ -1,9 +1,15 @@
-use std::{cell::RefCell, ops::Deref, rc::Rc};
+use std::{cell::RefCell, rc::Rc};
 
 use gtk::glib::object::{Cast, IsA};
 
 pub struct Runtime {
     vec: RefCell<Vec<Box<dyn Scope>>>,
+}
+
+impl Default for Runtime {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Runtime {

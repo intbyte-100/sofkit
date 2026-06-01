@@ -7,7 +7,7 @@ use crate::state::{ReadState, StateAccessor, StateHandle, StateHolder};
 use std::any::{Any, TypeId};
 
 thread_local! {
-    static APPDATA_STACK: RefCell<Vec<Context>> = RefCell::new(Vec::new());
+    static APPDATA_STACK: RefCell<Vec<Context>> = const { RefCell::new(Vec::new()) };
 }
 
 #[derive(Default)]
@@ -148,7 +148,7 @@ where
         }
     }
 
-    pub fn make_state(&self, holder: &StateHolder) -> impl ReadState<T> + 'static{
+    pub fn make_state(&self, holder: &StateHolder) -> impl ReadState<T> + 'static {
         let state = holder.state(self.inner.clone());
         let sub_state = state.clone();
 
