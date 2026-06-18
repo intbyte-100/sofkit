@@ -168,15 +168,62 @@ impl Calculator {
 }
 
 const CSS: &str = r#"
-    .calc-button {
-        font-size: 18px;
-        padding: 8px;
-        margin: 4px;
-    }
-    .expr {
-        font-size: 20px;
-        padding: 12px;
-    }
+@define-color bg0 rgba(52, 49, 63, 0.5);
+@define-color bg1 rgba(1, 1, 1, 0.2);
+@define-color bg3 rgba(255, 255, 255, 0.3);
+@define-color fg0 rgb(230, 230, 230);
+@define-color fg1 rgb(255, 255, 255);
+
+window {
+    border-color: @fg1;
+    background-color: @bg0;
+    min-width: 300pt;
+    min-height: 480px;
+    font-size: 1.1em;
+    font-weight: bold;
+    font-family: "Adwaita Sans";
+}
+
+
+.outer-box {
+    background-color: transparent;
+    padding: 0 16px 10px 16px;
+}
+
+
+.expr {
+    font-size: 20px;
+    padding: 5px;
+    margin: 20px 20px 20px 10px;
+    background-color: transparent;
+    border: 0;
+    outline: 0;
+    color: @fg1;
+}
+
+
+.calc-button {
+    background-image: none;
+    background-color: @bg1;
+    color: @fg0;
+    font-size: 18px;
+    padding: 10px;
+    margin: 4px;
+    border-radius: 30%;
+    border: solid 0.2px;
+    border-color: @fg1;
+    transition: color 150ms ease, background-color 150ms ease;
+}
+
+.calc-button:hover {
+    background-color: @bg3;
+    color: @fg1;
+    border-color: @fg1;
+}
+
+.calc-button:active {
+    background-color: alpha(@bg3, 0.7);
+}
 "#;
 
 fn calc_button(lbl: impl ReactiveValue<String> + 'static) -> impl ReactiveButton<Button> {
